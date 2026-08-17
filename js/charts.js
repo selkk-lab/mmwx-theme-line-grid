@@ -32,8 +32,16 @@
     const pts = raw.map(function (v) { return typeof v === "object" && v ? n(v.v) : n(v); });
     if (!pts.length) return "";
     const usable = pts.filter(function (v) { return v >= 0; });
-    const min = Math.min.apply(null, usable.length ? usable : [0]);
-    const max = Math.max.apply(null, usable.length ? usable : [1]);
+    const dataMax = Math.max.apply(null, usable.length ? usable : [0]);
+    function niceMax(m) {
+      if (m <= 50) return 50;
+      if (m <= 100) return 100;
+      if (m <= 200) return 200;
+      if (m <= 500) return 500;
+      return Math.ceil(m / 100) * 100;
+    }
+    const min = 0;
+    const max = niceMax(dataMax);
     const span = Math.max(1, max - min);
     const padX = 2;
     const padY = 6;
