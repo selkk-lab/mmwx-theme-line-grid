@@ -65,59 +65,83 @@ body {
   position: fixed;
   inset: 0;
   z-index: 0;
-  background-image:
-    repeating-linear-gradient(0deg, rgba(255, 252, 246, 0.04) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(90deg, rgba(255, 252, 246, 0.032) 0 1px, transparent 1px 3px);
-  mix-blend-mode: soft-light;
+  overflow: hidden;
+  mix-blend-mode: screen;
+}
+
+.voile::before,
+.voile::after,
+.voile i {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse 72% 64% at 50% 46%,
+    rgba(255, 255, 255, 0.045) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
+    rgba(255, 255, 255, 0.16) 60%,
+    rgba(255, 255, 255, 0.05) 68%,
+    transparent 74%
+  );
 }
 
 .voile::before {
   content: "";
-  position: absolute;
-  inset: 0;
-  background-image: repeating-linear-gradient(
-    27deg,
-    rgba(255, 255, 255, 0.028) 0 1px,
-    transparent 1px 6px
-  );
-  opacity: 0.8;
+  width: 58vmax;
+  height: 42vmax;
+  left: -6%;
+  top: -8%;
+  animation: medusa-a 26s ease-in-out infinite;
 }
 
 .voile::after {
   content: "";
-  position: absolute;
-  inset: -20% -40%;
-  background: linear-gradient(
-    118deg,
-    transparent 36%,
-    rgba(255, 255, 255, 0.018) 46%,
-    rgba(255, 255, 255, 0.1) 50%,
-    rgba(255, 255, 255, 0.018) 54%,
-    transparent 64%
-  );
-  animation: voile-sheen 34s linear infinite;
+  width: 46vmax;
+  height: 36vmax;
+  right: -4%;
+  top: 18%;
+  opacity: 0.75;
+  animation: medusa-b 34s ease-in-out infinite;
 }
 
-@keyframes voile-sheen {
-  from { transform: translate3d(-16%, 0, 0); }
-  to { transform: translate3d(16%, 0, 0); }
+.voile i {
+  width: 38vmax;
+  height: 30vmax;
+  left: 28%;
+  bottom: -10%;
+  opacity: 0.55;
+  animation: medusa-c 42s ease-in-out infinite;
+}
+
+@keyframes medusa-a {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(12vw, 8vh, 0) scale(1.07); }
+}
+
+@keyframes medusa-b {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1.04); }
+  50% { transform: translate3d(-10vw, 6vh, 0) scale(0.96); }
+}
+
+@keyframes medusa-c {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(0.98); }
+  50% { transform: translate3d(7vw, -7vh, 0) scale(1.08); }
 }
 
 html[data-theme="light"] .voile {
-  background-image:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.22) 0 1px, transparent 1px 3px),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 3px);
-  mix-blend-mode: overlay;
+  mix-blend-mode: multiply;
 }
 
-html[data-theme="light"] .voile::after {
-  background: linear-gradient(
-    118deg,
-    transparent 36%,
-    rgba(255, 255, 255, 0.08) 46%,
-    rgba(255, 255, 255, 0.32) 50%,
-    rgba(255, 255, 255, 0.08) 54%,
-    transparent 64%
+html[data-theme="light"] .voile::before,
+html[data-theme="light"] .voile::after,
+html[data-theme="light"] .voile i {
+  background: radial-gradient(
+    ellipse 72% 64% at 50% 46%,
+    rgba(80, 58, 28, 0.04) 0%,
+    rgba(80, 58, 28, 0.02) 40%,
+    rgba(80, 58, 28, 0.14) 60%,
+    rgba(80, 58, 28, 0.04) 68%,
+    transparent 74%
   );
 }
 
@@ -1767,5 +1791,7 @@ body.is-locked {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   .live i { animation: none; }
-  .voile::after { animation: none; }
+  .voile::before,
+  .voile::after,
+  .voile i { animation: none; }
 }
