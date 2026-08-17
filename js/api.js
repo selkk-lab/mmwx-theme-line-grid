@@ -66,7 +66,18 @@
       if (!KomariAdapt.looksLikeNodes(parts[0])) return null;
       KomariAdapt.remember(parts[0], parts[1]);
       lastSource = "komari";
-      return KomariAdapt.toPayload(parts[0], null, parts[1]);
+      const payload = KomariAdapt.toPayload(parts[0], null, parts[1]);
+      const jobs = (payload.servers || []).slice(0, 40).map(function (s) {
+        if (!s.uuid) return Promise.resolve();
+        return getJSON("/api/records/ping?uuid=" + encodeURIComponent(s.uuid) + "&hours=1").then(function (raw) {
+          const ping = KomariAdapt.pingFromRecords(raw);
+          if (ping && ping.length) {
+            s.ping = ping;
+            KomariAdapt.setPings(s.uuid, ping);
+          }
+        }).catch(function () {});
+      });
+      return Promise.all(jobs).then(function () { return payload; });
     });
   }
 

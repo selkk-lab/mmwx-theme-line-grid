@@ -74,6 +74,54 @@
     return { online: online, data: data && typeof data === "object" && !Array.isArray(data) ? data : {} };
   }
 
+  let pingCache = {};
+
+  function trafficUsed(node, live) {
+    const up = firstNum(live, ["network.totalUp", "net.totalUp", "net.total_up", "net_total_up", "net_out_transfer"]);
+    const down = firstNum(live, ["network.totalDown", "net.totalDown", "net.total_down", "net_total_down", "net_in_transfer"]);
+    const typ = node.traffic_limit_type || "sum";
+    if (typ === "max") return Math.max(up, down);
+    if (typ === "min") return Math.min(up, down);
+    if (typ === "up") return up;
+    if (typ === "down") return down;
+    return up + down;
+  }
+
+  function pingFromRecords(raw) {
+    const body = raw && raw.data ? raw.data : raw;
+    const recs = (body && body.records) || [];
+    const tasks = (body && body.tasks) || [];
+    if (!tasks.length && recs.length) {
+      const last = recs[recs.length - 1];
+      return [{
+        key: "ping",
+        label: "Ping",
+        current_ms: last ? Math.round(last.value) : -1,
+        loss_pct: 0,
+        buckets: recs.slice(-12).map(function (r) { return { ms: Math.round(r.value), loss: 0 }; }),
+      }];
+    }
+    const byTask = {};
+    recs.forEach(function (r) {
+      (byTask[r.task_id] = byTask[r.task_id] || []).push(r);
+    });
+    return tasks.map(function (t) {
+      const rows = byTask[t.id] || [];
+      const last = rows[rows.length - 1];
+      return {
+        key: String(t.id),
+        label: t.name || "Ping",
+        current_ms: last ? Math.round(last.value) : -1,
+        loss_pct: num(t.loss),
+        buckets: rows.slice(-12).map(function (r) { return { ms: Math.round(r.value), loss: 0 }; }),
+      };
+    });
+  }
+
+  function setPings(uuid, ping) {
+    pingCache[uuid] = ping;
+  }
+
   function mapNode(node, st, onlineSet) {
     const id = String(node.uuid || node.UUID || node.id || "");
     const live = st || {};
@@ -93,11 +141,10 @@
       mem_total: firstNum(node, ["mem_total", "ram_total"]) || firstNum(live, ["ram.total", "mem_total"]),
       disk_used: firstNum(live, ["disk.used", "disk", "disk_used"]),
       disk_total: firstNum(node, ["disk_total"]) || firstNum(live, ["disk.total", "disk_total"]),
-      download_speed: firstNum(live, ["net.in", "net.down", "network.in", "net_in", "net_in_speed"]),
-      upload_speed: firstNum(live, ["net.out", "net.up", "network.out", "net_out", "net_out_speed"]),
-      traffic_used: firstNum(live, ["net.total_in", "net.totalDown", "net.total_down", "net_in_transfer"]) +
-        firstNum(live, ["net.total_out", "net.totalUp", "net.total_up", "net_out_transfer"]),
-      traffic_limit: 0,
+      download_speed: firstNum(live, ["network.down", "net.down", "net.in", "network.in", "net_in"]),
+      upload_speed: firstNum(live, ["network.up", "net.up", "net.out", "network.out", "net_out"]),
+      traffic_used: trafficUsed(node, live),
+      traffic_limit: num(node.traffic_limit),
       uptime: firstNum(live, ["uptime", "uptime_seconds"]),
       ping: [],
       loadavg: firstVal(live, ["load.load1", "load1", "load"]) || "",
@@ -119,7 +166,9 @@
       show_globe: true,
       servers: list.map(function (n) {
         const id = n.uuid || n.UUID || n.id;
-        return mapNode(n, live.data[id] || live.data[String(id)] || {}, onlineSet);
+        const mapped = mapNode(n, live.data[id] || live.data[String(id)] || {}, onlineSet);
+        mapped.ping = pingCache[mapped.uuid] || mapped.ping;
+        return mapped;
       }),
       _source: "komari",
     };
@@ -135,5 +184,7 @@
     toPayload: toPayload,
     remember: remember,
     liveBundle: liveBundle,
+    pingFromRecords: pingFromRecords,
+    setPings: setPings,
   };
 })(window);
