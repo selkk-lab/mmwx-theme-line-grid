@@ -174,6 +174,20 @@ html[data-theme="light"] .grain::after { opacity: 0.016; }
   letter-spacing: 0.18em;
 }
 
+.live i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  background: var(--live);
+  vertical-align: 1px;
+  animation: live-tick 1.8s steps(1, end) infinite;
+}
+
+@keyframes live-tick {
+  50% { opacity: 0.18; }
+}
+
 .site-nav {
   display: flex;
   border: 1px solid var(--line);
@@ -309,27 +323,46 @@ html[data-theme="light"] .grain::after { opacity: 0.016; }
 .cell.is-bad::before,
 .cell.is-down::before { background: var(--down); opacity: 0.75; }
 
-.cell:hover::after {
+.cell:hover::after,
+.cell:focus-visible::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  height: 32%;
-  top: -32%;
-  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ink) 12%, transparent), transparent);
-  animation: card-scan 0.85s var(--ease) forwards;
+  inset: 10px;
+  pointer-events: none;
+  opacity: 0.4;
+  background:
+    linear-gradient(var(--ink-faint), var(--ink-faint)) left top / 8px 1px no-repeat,
+    linear-gradient(var(--ink-faint), var(--ink-faint)) left top / 1px 8px no-repeat,
+    linear-gradient(var(--ink-faint), var(--ink-faint)) right top / 8px 1px no-repeat,
+    linear-gradient(var(--ink-faint), var(--ink-faint)) right top / 1px 8px no-repeat,
+    linear-gradient(var(--ink-faint), var(--ink-faint)) left bottom / 8px 1px no-repeat,
+    linear-gradient(var(--ink-faint), var(--ink-faint)) left bottom / 1px 8px no-repeat,
+    linear-gradient(var(--ink-faint), var(--ink-faint)) right bottom / 8px 1px no-repeat,
+    linear-gradient(var(--ink-faint), var(--ink-faint)) right bottom / 1px 8px no-repeat;
+}
+
+.card-coord {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--ink-faint);
+  opacity: 0;
   pointer-events: none;
 }
 
-@keyframes card-scan {
-  to { top: 100%; }
-}
+.cell:hover .card-coord,
+.cell:focus-visible .card-coord { opacity: 1; }
 
 .cell:focus-visible {
   outline: 1px solid var(--ink);
   outline-offset: -1px;
   z-index: 2;
 }
+
+.card { position: relative; }
 
 .card-face {
   min-height: 168px;
@@ -554,7 +587,11 @@ html[data-theme="light"] .grain::after { opacity: 0.016; }
 .quota-mini.is-full i { background: var(--down); }
 
 .cell:hover,
-.cell:focus-visible,
+.cell:focus-visible {
+  background: transparent;
+  outline: none;
+}
+
 .row:hover,
 .row:focus-visible,
 .slab:hover,
@@ -1444,8 +1481,19 @@ html[data-theme="light"] .overlay {
 }
 
 .reg {
+  appearance: none;
+  -webkit-appearance: none;
   display: flex;
   justify-content: space-between;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   font-size: 13px;
   color: var(--ink-soft);
 }
@@ -1672,5 +1720,5 @@ body.is-locked {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
-  .cell:hover::after { display: none; }
+  .live i { animation: none; }
 }

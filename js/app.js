@@ -309,10 +309,25 @@
     return " is-ok";
   }
 
+  function cardCoord(server) {
+    const ll = COUNTRY_LL[server.region_country];
+    if (!ll) return (server.region_country || "——");
+    return Math.abs(ll[1]).toFixed(1) + (ll[1] >= 0 ? "N" : "S") + "  " + Math.abs(ll[0]).toFixed(1) + (ll[0] >= 0 ? "E" : "W");
+  }
+
+  function lookAtCountry(cc) {
+    const ll = COUNTRY_LL[cc];
+    if (!ll) return;
+    globeLon = ll[0];
+    globeLat = Math.max(-78, Math.min(78, ll[1]));
+    paintGlobe();
+  }
+
   function card(server, i) {
     return (
       '<button class="cell' + cardTone(server) + '" data-index="' + i + '" type="button">' +
         '<div class="card">' +
+          '<span class="card-coord">' + cardCoord(server) + "</span>" +
           '<div class="card-face">' +
             '<div class="head">' +
               '<span class="cc">' + (server.region_country || "") + "</span>" +
@@ -937,7 +952,8 @@
       regions[k] = (regions[k] || 0) + 1;
     });
     const side = Object.keys(regions).map(function (k) {
-      return '<div class="reg"><span>' + k + "</span><b>" + regions[k] + "</b></div>";
+      const cc = k.split(" · ")[0];
+      return '<button type="button" class="reg" data-aim="' + cc + '"><span>' + k + "</span><b>" + regions[k] + "</b></button>";
     }).join("");
     return (
       '<section class="home-globe" aria-label="节点地球">' +
@@ -1211,6 +1227,11 @@
       render();
       return;
     }
+    const aim = ev.target.closest("[data-aim]");
+    if (aim) {
+      lookAtCountry(aim.getAttribute("data-aim"));
+      return;
+    }
     if (globeSkipClick) {
       globeSkipClick = false;
       if (ev.target.closest(".atlas")) return;
@@ -1275,6 +1296,12 @@
   main.addEventListener("pointermove", onGlobeMove);
   main.addEventListener("pointerup", onGlobeUp);
   main.addEventListener("pointercancel", onGlobeUp);
+  main.addEventListener("dblclick", function (ev) {
+    if (!ev.target.closest(".atlas")) return;
+    globeLon = 80;
+    globeLat = 30;
+    paintGlobe();
+  });
   window.addEventListener("hashchange", render);
   window.addEventListener("keydown", onKey);
 
