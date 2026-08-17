@@ -56,15 +56,26 @@
       d += (i ? " L " : "M ") + p[0].toFixed(2) + " " + p[1].toFixed(2);
     });
     const last = coords[coords.length - 1];
+    const first = coords[0];
     const color = opt.color || token("--ink", "#d5d0c4");
     const hitW = Math.max(6, step || w);
     const hits = coords.map(function (p, i) {
       const tip = (opt.tips && opt.tips[i]) || (pts[i] < 0 ? "无数据" : pts[i] + " ms");
       return '<rect class="chart-hit" data-tip="' + esc(tip) + '" x="' + (p[0] - hitW / 2).toFixed(2) + '" y="0" width="' + hitW.toFixed(2) + '" height="' + h + '" fill="transparent"/>';
     }).join("");
+    const innerH = h - padY * 2;
+    let grid = "";
+    [0, 0.5, 1].forEach(function (t) {
+      const y = (h - padY - t * innerH).toFixed(2);
+      grid += '<line class="spark-grid" x1="' + padX + '" y1="' + y + '" x2="' + (w - padX) + '" y2="' + y + '" stroke="' + inkRgba(t === 0 ? 0.16 : 0.08) + '" stroke-width="0.6"/>';
+    });
+    const area = d
+      ? '<path class="spark-fill" d="' + d + " L " + last[0].toFixed(2) + " " + (h - padY).toFixed(2) + " L " + first[0].toFixed(2) + " " + (h - padY).toFixed(2) + ' Z" fill="' + inkRgba(0.08) + '" stroke="none"/>'
+      : "";
     return (
       '<svg class="spark" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none">' +
-        '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.25" vector-effect="non-scaling-stroke"/>' +
+        grid + area +
+        '<path class="spark-line" d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.25" vector-effect="non-scaling-stroke"/>' +
         '<circle cx="' + last[0].toFixed(2) + '" cy="' + last[1].toFixed(2) + '" r="1.7" fill="' + color + '"/>' +
         hits +
       "</svg>"

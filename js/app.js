@@ -250,7 +250,7 @@
     return (
       '<div class="spark-wrap">' +
         ProbeCharts.spark(vals, { w: tall ? 420 : 240, h: tall ? 64 : 40, color: ms >= 100 ? cssVar("--gold", "#c4a56a") : cssVar("--ink", "#d5d0c4"), tips: pingTips(vals, 5) }) +
-        (tall ? "" : '<span class="ms' + (ms >= 100 ? " is-hot" : "") + '">' + (ms < 0 ? "—" : ms + " ms") + "</span>") +
+        (tall ? "" : '<span class="ms' + (ms >= 100 ? " is-hot" : "") + '">' + (ms < 0 ? "—" : String(ms).padStart(3, "0") + " ms") + "</span>") +
       "</div>"
     );
   }
@@ -301,9 +301,17 @@
     );
   }
 
+  function cardTone(server) {
+    if (!server.online) return " is-down";
+    const ms = pingMs(server);
+    if (ms >= 150) return " is-bad";
+    if (ms >= 100) return " is-hot";
+    return " is-ok";
+  }
+
   function card(server, i) {
     return (
-      '<button class="cell" data-index="' + i + '" type="button">' +
+      '<button class="cell' + cardTone(server) + '" data-index="' + i + '" type="button">' +
         '<div class="card">' +
           '<div class="card-face">' +
             '<div class="head">' +
@@ -874,11 +882,33 @@
       }
       return d ? '<path d="' + d + '" fill="none" stroke="' + dim + '" stroke-width="0.9"/>' : "";
     }
-    let wire = '<circle class="globe-disk" cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="transparent" stroke="' + ink + '" stroke-width="1.05"/>';
+    let wire =
+      '<defs><radialGradient id="globe-shade" cx="38%" cy="36%" r="68%">' +
+        '<stop offset="0%" stop-color="' + cssVar("--ink", "#d5d0c4") + '" stop-opacity="0.05"/>' +
+        '<stop offset="70%" stop-color="' + cssVar("--ink", "#d5d0c4") + '" stop-opacity="0"/>' +
+        '<stop offset="100%" stop-color="' + cssVar("--void", "#0c0c0c") + '" stop-opacity="0.28"/>' +
+      "</radialGradient></defs>" +
+      '<circle class="globe-disk" cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="url(#globe-shade)" stroke="' + ink + '" stroke-width="1.05"/>';
     for (let lon = -180; lon < 180; lon += 30) wire += curve(lon, null, -80, 80, 4);
     for (let lat = -60; lat <= 60; lat += 30) wire += curve(null, lat, -180, 180, 4);
+    wire += curve(null, 0, -180, 180, 3).replace('stroke-width="0.9"', 'stroke-width="1.15"');
     wire += '<line x1="48" y1="' + (cy + R + 16) + '" x2="288" y2="' + (cy + R + 16) + '" stroke="' + ink + '" stroke-width="1"/>';
-    const pins = layoutGlobeLabels(cx, ortho).map(function (n) {
+    const laid = layoutGlobeLabels(cx, ortho);
+    let links = "";
+    const online = laid.filter(function (n) { return n.s.online; });
+    online.forEach(function (a, i) {
+      online.forEach(function (b, j) {
+        if (j <= i) return;
+        if ((a.s.region_country || "") === (b.s.region_country || "")) return;
+        if ((a.i * 7 + b.i * 3) % 4 !== 1) return;
+        const mx = (a.px + b.px) / 2;
+        const my = (a.py + b.py) / 2;
+        const qx = cx + (mx - cx) * 0.42;
+        const qy = cy + (my - cy) * 0.42;
+        links += '<path class="globe-link" d="M ' + a.px.toFixed(1) + " " + a.py.toFixed(1) + " Q " + qx.toFixed(1) + " " + qy.toFixed(1) + " " + b.px.toFixed(1) + " " + b.py.toFixed(1) + '" fill="none" stroke="' + ink + '" stroke-width="0.55" opacity="0.32"/>';
+      });
+    });
+    const pins = laid.map(function (n) {
       const tx = n.end ? n.lx - 3 : n.lx + 3;
       return (
         '<g class="globe-node">' +
@@ -889,7 +919,7 @@
         "</g>"
       );
     }).join("");
-    return wire + pins +
+    return wire + links + pins +
       '<text x="168" y="' + (cy + R + 28) + '" text-anchor="middle" fill="' + hexToRgba(cssVar("--ink", "#d5d0c4"), 0.28) + '" font-size="8" font-family="IBM Plex Mono, monospace" letter-spacing="1.4">' + globeCaption() + "</text>";
   }
 
@@ -1347,6 +1377,24 @@
 
   setInterval(tickDemo, 5000);
   setInterval(renderFoot, 1000);
+
+  (function startGlobeIdle() {
+    let last = 0;
+    function frame(t) {
+      requestAnimationFrame(frame);
+      if (t - last < 70) return;
+      last = t;
+      if (!showGlobe || globeDrag || document.hidden) return;
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (route().home !== "nodes") return;
+      if (overlay && !overlay.hidden) return;
+      if (!main.querySelector(".atlas svg")) return;
+      globeLon = wrapLon(globeLon + 0.18);
+      paintGlobe();
+    }
+    requestAnimationFrame(frame);
+  })();
+
   render();
   ProbeAPI.fetchServers().then(function (payload) {
     if (!payload || payload.enabled === false) return;
