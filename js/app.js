@@ -509,7 +509,7 @@
     foot.innerHTML =
       "<div>总使用流量　<b>" + fmtBytes(t.used, 2) + " / " + fmtBytes(t.limit, 2) + "</b></div>" +
       "<div>在线服务器　<b>" + t.online + " / " + t.all + "</b></div>" +
-      "<div>最后更新　<b>" + clock(new Date()) + "</b>　·　" + (liveMode ? "官方接口" : "演示数据") + "</div>";
+      "<div>最后更新　<b>" + clock(new Date()) + "</b>　·　" + (liveMode ? (state._source === "komari" ? "Komari 接口" : "官方接口") : "演示数据") + "</div>";
   }
 
   function listEmpty() {
@@ -892,6 +892,12 @@
     for (let lon = -180; lon < 180; lon += 30) wire += curve(lon, null, -80, 80, 4);
     for (let lat = -60; lat <= 60; lat += 30) wire += curve(null, lat, -180, 180, 4);
     wire += curve(null, 0, -180, 180, 3).replace('stroke-width="0.9"', 'stroke-width="1.15"');
+    const sweepLon = ((Date.now() / 28) % 360) - 180;
+    for (let k = 0; k < 6; k += 1) {
+      const lon = sweepLon - k * 8;
+      const sweep = curve(lon, null, -80, 80, 3);
+      if (sweep) wire += sweep.replace('stroke-width="0.9"', 'stroke-width="' + (k === 0 ? 1.6 : 1.1) + '"').replace(dim, hexToRgba(cssVar("--ink", "#d5d0c4"), 0.42 - k * 0.06));
+    }
     wire += '<line x1="48" y1="' + (cy + R + 16) + '" x2="288" y2="' + (cy + R + 16) + '" stroke="' + ink + '" stroke-width="1"/>';
     const laid = layoutGlobeLabels(cx, ortho);
     let links = "";
@@ -1360,7 +1366,43 @@
   (function bindChartTip() {
     const tip = document.getElementById("chart-tip");
     if (!tip) return;
+    let lastSvg = null;
     document.addEventListener("pointermove", function (ev) {
+      const svg = ev.target.closest && ev.target.closest("svg.spark");
+      if (lastSvg && lastSvg !== svg) {
+        const prev = lastSvg.querySelector(".scope-cur");
+        if (prev) prev.setAttribute("hidden", "");
+      }
+      lastSvg = svg;
+      if (svg) {
+        const pack = (svg.getAttribute("data-pts") || "").split(";").map(function (row) {
+          const p = row.split(",");
+          return { x: Number(p[0]), y: Number(p[1]), v: Number(p[2]) };
+        }).filter(function (p) { return Number.isFinite(p.x); });
+        const box = svg.getBoundingClientRect();
+        const vb = svg.viewBox.baseVal;
+        const x = ((ev.clientX - box.left) / Math.max(1, box.width)) * vb.width;
+        let best = pack[0];
+        let bestD = 1e9;
+        pack.forEach(function (p) {
+          const d = Math.abs(p.x - x);
+          if (d < bestD) { bestD = d; best = p; }
+        });
+        const cur = svg.querySelector(".scope-cur");
+        if (cur && best) {
+          cur.removeAttribute("hidden");
+          const line = cur.querySelector(".scope-v");
+          const dot = cur.querySelector(".scope-dot");
+          if (line) {
+            line.setAttribute("x1", best.x);
+            line.setAttribute("x2", best.x);
+          }
+          if (dot) {
+            dot.setAttribute("cx", best.x);
+            dot.setAttribute("cy", best.y);
+          }
+        }
+      }
       const el = ev.target.closest && ev.target.closest("[data-tip]");
       if (!el) {
         tip.hidden = true;
@@ -1368,10 +1410,10 @@
       }
       tip.hidden = false;
       tip.textContent = el.getAttribute("data-tip") || "";
-      const x = Math.min(ev.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
-      const y = Math.min(ev.clientY + 12, window.innerHeight - tip.offsetHeight - 8);
-      tip.style.left = x + "px";
-      tip.style.top = y + "px";
+      const tx = Math.min(ev.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+      const ty = Math.min(ev.clientY + 12, window.innerHeight - tip.offsetHeight - 8);
+      tip.style.left = tx + "px";
+      tip.style.top = ty + "px";
     });
   })();
 
@@ -1399,6 +1441,12 @@
   ProbeAPI.fetchServers().then(function (payload) {
     if (!payload || payload.enabled === false) return;
     applyLive(payload);
-    ProbeAPI.connectWS(applyLive);
+    if (payload._source === "komari") {
+      setInterval(function () {
+        ProbeAPI.fetchServers().then(function (next) { if (next) applyLive(next); });
+      }, 2000);
+    } else {
+      ProbeAPI.connectWS(applyLive);
+    }
   });
 })();

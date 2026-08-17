@@ -72,11 +72,18 @@
     const area = d
       ? '<path class="spark-fill" d="' + d + " L " + last[0].toFixed(2) + " " + (h - padY).toFixed(2) + " L " + first[0].toFixed(2) + " " + (h - padY).toFixed(2) + ' Z" fill="' + inkRgba(0.08) + '" stroke="none"/>'
       : "";
+    const packed = coords.map(function (p, i) {
+      return p[0].toFixed(2) + "," + p[1].toFixed(2) + "," + pts[i];
+    }).join(";");
     return (
-      '<svg class="spark" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none">' +
+      '<svg class="spark" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" data-pts="' + packed + '">' +
         grid + area +
         '<path class="spark-line" d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.25" vector-effect="non-scaling-stroke"/>' +
         '<circle cx="' + last[0].toFixed(2) + '" cy="' + last[1].toFixed(2) + '" r="1.7" fill="' + color + '"/>' +
+        '<g class="scope-cur" hidden>' +
+          '<line class="scope-v" x1="0" y1="0" x2="0" y2="' + h + '" stroke="' + color + '" stroke-width="0.8" opacity="0.55"/>' +
+          '<circle class="scope-dot" cx="0" cy="0" r="2.4" fill="none" stroke="' + color + '" stroke-width="1"/>' +
+        "</g>" +
         hits +
       "</svg>"
     );

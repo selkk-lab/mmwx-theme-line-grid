@@ -309,6 +309,22 @@ html[data-theme="light"] .grain::after { opacity: 0.016; }
 .cell.is-bad::before,
 .cell.is-down::before { background: var(--down); opacity: 0.75; }
 
+.cell:hover::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 32%;
+  top: -32%;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--ink) 12%, transparent), transparent);
+  animation: card-scan 0.85s var(--ease) forwards;
+  pointer-events: none;
+}
+
+@keyframes card-scan {
+  to { top: 100%; }
+}
+
 .cell:focus-visible {
   outline: 1px solid var(--ink);
   outline-offset: -1px;
@@ -407,6 +423,8 @@ html[data-theme="light"] .grain::after { opacity: 0.016; }
 }
 
 .spark-wrap .ms.is-hot { color: var(--gold); }
+
+.scope-cur { pointer-events: none; }
 
 .meters {
   display: grid;
@@ -1112,6 +1130,12 @@ html[data-theme="light"] .overlay {
   border: 1px solid var(--line-strong);
   box-shadow: var(--shadow);
   position: relative;
+  animation: plate-in 0.42s var(--ease);
+}
+
+@keyframes plate-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
 }
 
 .stage-bar {
@@ -1648,4 +1672,5 @@ body.is-locked {
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+  .cell:hover::after { display: none; }
 }

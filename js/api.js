@@ -48,8 +48,31 @@
     }, Promise.resolve(null));
   }
 
+  function forcedSource() {
+    const q = new URLSearchParams(location.search).get("src");
+    if (q) return q;
+    if (global.ProbeConfig && ProbeConfig.source) return ProbeConfig.source;
+    return "";
+  }
+
+  function fetchKomari() {
+    if (!global.KomariAdapt) return Promise.resolve(null);
+    return Promise.all([
+      getJSON("/api/nodes"),
+      getJSON("/api/recent"),
+      getJSON("/api/public"),
+    ]).then(function (parts) {
+      if (!KomariAdapt.looksLikeNodes(parts[0])) return null;
+      return KomariAdapt.toPayload(parts[0], parts[1], parts[2]);
+    });
+  }
+
   function fetchServers() {
-    return firstJSON(["/api/probe", "/api/public/probe-servers"]);
+    if (forcedSource() === "komari") return fetchKomari();
+    return firstJSON(["/api/probe", "/api/public/probe-servers"]).then(function (data) {
+      if (data && data.servers) return data;
+      return fetchKomari().then(function (k) { return k || data; });
+    });
   }
 
   function fetchSeries(index, range, target) {
