@@ -20,8 +20,8 @@
   --down: #b06d52;
   --wash: rgba(213, 208, 196, 0.06);
   --shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
-  --plate-minor: rgba(213, 208, 196, 0.035);
-  --plate-major: rgba(213, 208, 196, 0.07);
+  --haze: rgba(213, 208, 196, 0.1);
+  --haze-2: rgba(196, 165, 106, 0.045);
 }
 
 html[data-theme="light"] {
@@ -40,8 +40,8 @@ html[data-theme="light"] {
   --down: #8f4a30;
   --wash: rgba(42, 33, 20, 0.06);
   --shadow: 0 20px 48px rgba(42, 33, 20, 0.12);
-  --plate-minor: rgba(42, 33, 20, 0.055);
-  --plate-major: rgba(42, 33, 20, 0.1);
+  --haze: rgba(255, 244, 214, 0.26);
+  --haze-2: rgba(180, 140, 70, 0.08);
 }
 
 * { box-sizing: border-box; }
@@ -65,47 +65,71 @@ body {
 }
 
 .grain,
-.grain::before,
 .grain::after,
+.haze,
+.haze::before,
+.haze::after,
 .plate,
 .plate::before,
 .plate::after {
   pointer-events: none;
   position: fixed;
+}
+
+.grain,
+.haze,
+.plate {
   inset: 0;
-}
-
-.grain {
   z-index: 0;
-  background-image:
-    linear-gradient(var(--plate-major) 1px, transparent 1px),
-    linear-gradient(90deg, var(--plate-major) 1px, transparent 1px),
-    linear-gradient(var(--plate-minor) 1px, transparent 1px),
-    linear-gradient(90deg, var(--plate-minor) 1px, transparent 1px);
-  background-size: 192px 192px, 192px 192px, 48px 48px, 48px 48px;
-  mask-image: radial-gradient(ellipse at 50% 16%, #000 0%, #000 46%, transparent 86%);
-}
-
-.grain::before {
-  content: "";
-  background-image:
-    radial-gradient(1.1px 1.1px at 11% 16%, var(--ink-dim), transparent),
-    radial-gradient(1px 1px at 24% 38%, var(--ink-dim), transparent),
-    radial-gradient(1.1px 1.1px at 41% 12%, var(--ink-soft), transparent),
-    radial-gradient(1px 1px at 63% 28%, var(--ink-dim), transparent),
-    radial-gradient(1px 1px at 78% 14%, var(--ink-dim), transparent),
-    radial-gradient(1.2px 1.2px at 86% 42%, var(--ink-soft), transparent),
-    radial-gradient(1px 1px at 18% 72%, var(--ink-dim), transparent),
-    radial-gradient(1px 1px at 52% 64%, var(--ink-dim), transparent),
-    radial-gradient(1.1px 1.1px at 71% 81%, var(--ink-dim), transparent),
-    radial-gradient(1px 1px at 91% 69%, var(--ink-dim), transparent);
-  opacity: 0.28;
 }
 
 .grain::after {
   content: "";
+  inset: 0;
   opacity: 0.022;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.haze {
+  inset: -30%;
+  overflow: hidden;
+}
+
+.haze::before,
+.haze::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(88px);
+  will-change: transform;
+}
+
+.haze::before {
+  width: 78vmax;
+  height: 54vmax;
+  left: 4%;
+  top: 0;
+  background: radial-gradient(ellipse at center, var(--haze) 0%, transparent 68%);
+  animation: haze-a 72s ease-in-out infinite alternate;
+}
+
+.haze::after {
+  width: 94vmax;
+  height: 62vmax;
+  right: -8%;
+  bottom: -12%;
+  background: radial-gradient(ellipse at center, var(--haze-2) 0%, transparent 70%);
+  animation: haze-b 96s ease-in-out infinite alternate;
+}
+
+@keyframes haze-a {
+  from { transform: translate3d(-7%, -5%, 0) scale(1); }
+  to { transform: translate3d(11%, 8%, 0) scale(1.06); }
+}
+
+@keyframes haze-b {
+  from { transform: translate3d(8%, 6%, 0); }
+  to { transform: translate3d(-12%, -7%, 0); }
 }
 
 .plate { z-index: 0; }
@@ -117,7 +141,7 @@ body {
 }
 
 .plate::before {
-  right: auto;
+  inset: 0 auto 0 0;
   width: 20px;
   background:
     repeating-linear-gradient(to bottom, var(--ink-soft) 0 1px, transparent 1px 48px),
@@ -126,7 +150,7 @@ body {
 }
 
 .plate::after {
-  bottom: auto;
+  inset: 0 0 auto 0;
   height: 18px;
   background:
     repeating-linear-gradient(to right, var(--ink-soft) 0 1px, transparent 1px 48px),
@@ -1780,4 +1804,6 @@ body.is-locked {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   .live i { animation: none; }
+  .haze::before,
+  .haze::after { animation: none; }
 }
