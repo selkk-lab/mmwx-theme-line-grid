@@ -20,6 +20,8 @@
   --down: #b06d52;
   --wash: rgba(213, 208, 196, 0.06);
   --shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
+  --plate-minor: rgba(213, 208, 196, 0.035);
+  --plate-major: rgba(213, 208, 196, 0.07);
 }
 
 html[data-theme="light"] {
@@ -38,6 +40,8 @@ html[data-theme="light"] {
   --down: #8f4a30;
   --wash: rgba(42, 33, 20, 0.06);
   --shadow: 0 20px 48px rgba(42, 33, 20, 0.12);
+  --plate-minor: rgba(42, 33, 20, 0.055);
+  --plate-major: rgba(42, 33, 20, 0.1);
 }
 
 * { box-sizing: border-box; }
@@ -61,7 +65,11 @@ body {
 }
 
 .grain,
-.grain::after {
+.grain::before,
+.grain::after,
+.plate,
+.plate::before,
+.plate::after {
   pointer-events: none;
   position: fixed;
   inset: 0;
@@ -70,25 +78,61 @@ body {
 .grain {
   z-index: 0;
   background-image:
-    linear-gradient(rgba(207, 198, 179, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(207, 198, 179, 0.018) 1px, transparent 1px);
-  background-size: 56px 56px;
-  mask-image: radial-gradient(ellipse at 50% 0%, #000 20%, transparent 78%);
+    linear-gradient(var(--plate-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--plate-major) 1px, transparent 1px),
+    linear-gradient(var(--plate-minor) 1px, transparent 1px),
+    linear-gradient(90deg, var(--plate-minor) 1px, transparent 1px);
+  background-size: 192px 192px, 192px 192px, 48px 48px, 48px 48px;
+  mask-image: radial-gradient(ellipse at 50% 16%, #000 0%, #000 46%, transparent 86%);
+}
+
+.grain::before {
+  content: "";
+  background-image:
+    radial-gradient(1.1px 1.1px at 11% 16%, var(--ink-dim), transparent),
+    radial-gradient(1px 1px at 24% 38%, var(--ink-dim), transparent),
+    radial-gradient(1.1px 1.1px at 41% 12%, var(--ink-soft), transparent),
+    radial-gradient(1px 1px at 63% 28%, var(--ink-dim), transparent),
+    radial-gradient(1px 1px at 78% 14%, var(--ink-dim), transparent),
+    radial-gradient(1.2px 1.2px at 86% 42%, var(--ink-soft), transparent),
+    radial-gradient(1px 1px at 18% 72%, var(--ink-dim), transparent),
+    radial-gradient(1px 1px at 52% 64%, var(--ink-dim), transparent),
+    radial-gradient(1.1px 1.1px at 71% 81%, var(--ink-dim), transparent),
+    radial-gradient(1px 1px at 91% 69%, var(--ink-dim), transparent);
+  opacity: 0.28;
 }
 
 .grain::after {
   content: "";
-  opacity: 0.026;
+  opacity: 0.022;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-html[data-theme="light"] .grain {
-  background-image:
-    linear-gradient(rgba(42, 33, 20, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(42, 33, 20, 0.04) 1px, transparent 1px);
+.plate { z-index: 0; }
+
+.plate::before,
+.plate::after {
+  content: "";
+  opacity: 0.32;
 }
 
-html[data-theme="light"] .grain::after { opacity: 0.016; }
+.plate::before {
+  right: auto;
+  width: 20px;
+  background:
+    repeating-linear-gradient(to bottom, var(--ink-soft) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(to bottom, var(--ink-dim) 0 1px, transparent 1px 12px);
+  mask-image: linear-gradient(to right, #000 0%, transparent 100%);
+}
+
+.plate::after {
+  bottom: auto;
+  height: 18px;
+  background:
+    repeating-linear-gradient(to right, var(--ink-soft) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(to right, var(--ink-dim) 0 1px, transparent 1px 12px);
+  mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+}
 
 .skip {
   position: absolute;
