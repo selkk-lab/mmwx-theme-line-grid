@@ -62,6 +62,9 @@ npx --yes serve .
 1. 运行 `pwsh -File scripts/pack-komari.ps1`，得到 `line-grid-komari.zip`
 2. 登录 Komari 后台 → 主题管理 → 上传该 zip 并启用
 3. 主题会读 Komari 的 `GET /api/nodes`、`GET /api/public`，实时数据走官方 WebSocket `/api/clients`（连接后发送 `get`）
+4. 延迟曲线来自 `GET /api/records/ping`；网速/流量按官方字段 `network.down` / `network.up` / `network.totalDown` / `network.totalUp`
+
+Komari 要求主题 `short` 只能是字母数字，本包标识是 `linegrid`（显示名仍是 line-grid）。`index.html` 的标题和描述用官方占位原文，方便后台注入站点名。
 
 也可以不打包，把本仓库整份拷到 Komari 主题目录，保证存在：
 
