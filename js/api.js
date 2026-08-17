@@ -1,0 +1,117 @@
+(function (global) {
+  function trimSlash(s) {
+    return String(s || "").replace(/\/+$/, "");
+  }
+
+  function base() {
+    const q = new URLSearchParams(location.search);
+    if (q.get("demo") === "1") return "";
+    if (q.get("api")) return trimSlash(q.get("api"));
+    if (global.ProbeConfig && ProbeConfig.apiBase != null) return trimSlash(ProbeConfig.apiBase);
+    return "";
+  }
+
+  function token() {
+    const q = new URLSearchParams(location.search);
+    return q.get("token") || localStorage.getItem("mmwx-token") || "";
+  }
+
+  function headers() {
+    const h = { Accept: "application/json" };
+    const t = token();
+    if (t) h["X-MMwx-Probe-Token"] = t;
+    return h;
+  }
+
+  function join(path) {
+    const root = base();
+    return root ? root + path : path;
+  }
+
+  function getJSON(path) {
+    if (!base() && location.protocol === "file:") return Promise.resolve(null);
+    return fetch(join(path), { headers: headers(), credentials: "omit", cache: "no-store" })
+      .then(function (res) {
+        const type = res.headers.get("content-type") || "";
+        if (!res.ok || type.indexOf("json") < 0) return null;
+        return res.json();
+      })
+      .catch(function () { return null; });
+  }
+
+  function firstJSON(paths) {
+    return paths.reduce(function (prev, path) {
+      return prev.then(function (data) {
+        if (data) return data;
+        return getJSON(path);
+      });
+    }, Promise.resolve(null));
+  }
+
+  function fetchServers() {
+    return firstJSON(["/api/probe", "/api/public/probe-servers"]);
+  }
+
+  function fetchSeries(index, range, target) {
+    const q = new URLSearchParams();
+    q.set("server", String(index));
+    q.set("range", range || "1h");
+    if (target && target !== "all") q.set("target", target);
+    const qs = q.toString();
+    return firstJSON([
+      "/api/series?" + qs,
+      "/api/public/probe-series?" + qs + "&metric=ping",
+    ]);
+  }
+
+  function connectWS(onPayload) {
+    const root = base();
+    if (!root && location.protocol === "file:") return null;
+    const http = root || (location.protocol + "//" + location.host);
+    const wsRoot = http.replace(/^http/i, "ws");
+    const q = token() ? "?token=" + encodeURIComponent(token()) : "";
+    const paths = ["/api/stream", "/api/public/probe-ws"];
+    let i = 0;
+    let ws = null;
+    function open() {
+      if (i >= paths.length) return;
+      try {
+        ws = new WebSocket(wsRoot + paths[i] + q);
+      } catch (err) {
+        i += 1;
+        open();
+        return;
+      }
+      ws.onmessage = function (ev) {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data && typeof data === "object") onPayload(data);
+        } catch (err) {}
+      };
+      ws.onerror = function () {
+        try { ws.close(); } catch (err) {}
+        i += 1;
+        open();
+      };
+    }
+    open();
+    return ws;
+  }
+
+  function sparkFromSeries(payload) {
+    if (!payload) return [];
+    const series = payload.series;
+    if (!series) return [];
+    if (Array.isArray(series)) return series.map(function (p) { return p.value; });
+    if (series.buckets) return series.buckets.map(function (b) { return b.ms; });
+    return [];
+  }
+
+  global.ProbeAPI = {
+    base: base,
+    fetchServers: fetchServers,
+    fetchSeries: fetchSeries,
+    connectWS: connectWS,
+    sparkFromSeries: sparkFromSeries,
+  };
+})(window);
