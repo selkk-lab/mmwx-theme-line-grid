@@ -10,6 +10,11 @@
       var t = localStorage.getItem("mmwx-theme") === "light" ? "light" : "dark";
       document.documentElement.setAttribute("data-theme", t);
       document.documentElement.style.colorScheme = t;
+      var fx = { grain: "1", count: "1", expose: "1" };
+      try { var s = JSON.parse(localStorage.getItem("mmwx-fx") || "{}"); Object.keys(fx).forEach(function (k) { if (s[k] != null) fx[k] = String(s[k]); }); } catch (e) {}
+      document.documentElement.setAttribute("data-fx-grain", fx.grain);
+      document.documentElement.setAttribute("data-fx-count", fx.count);
+      document.documentElement.setAttribute("data-fx-expose", fx.expose);
     })();
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -18,9 +23,7 @@
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <div class="voile" aria-hidden="true">
-    <img class="voile-silk" src="img/scarf.jpg" alt="">
-  </div>
+  <div class="fx-grain" aria-hidden="true"></div>
   <a class="skip" href="#main">跳到内容</a>
   <div class="shell">
     <header class="top">
@@ -56,6 +59,7 @@
     </section>
   </div>
   <div id="chart-tip" hidden></div>
+  <script src="js/fx.js"></script>
   <script src="js/config.js"></script>
   <script src="js/data.js"></script>
   <script src="js/komari.js"></script>

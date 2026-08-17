@@ -1,4 +1,5 @@
 :root {
+  --globe-rim: rgba(8, 8, 8, 0.36);
   --sans: "Instrument Sans", "Source Han Sans SC", "Noto Sans SC", sans-serif;
   --serif: "Instrument Serif", "Songti SC", "Noto Serif SC", serif;
   --mono: "IBM Plex Mono", "Source Han Mono SC", ui-monospace, monospace;
@@ -23,6 +24,7 @@
 }
 
 html[data-theme="light"] {
+  --globe-rim: rgba(42, 33, 20, 0.2);
   --void: #e4d3ae;
   --void-2: #e4d3ae;
   --ink: #2a2114;
@@ -60,34 +62,136 @@ body {
   position: relative;
 }
 
-.voile {
+@property --void { syntax: "<color>"; inherits: true; initial-value: #0c0c0c; }
+@property --void-2 { syntax: "<color>"; inherits: true; initial-value: #0c0c0c; }
+@property --ink { syntax: "<color>"; inherits: true; initial-value: #d5d0c4; }
+@property --ink-soft { syntax: "<color>"; inherits: true; initial-value: #c4beaf; }
+@property --ink-dim { syntax: "<color>"; inherits: true; initial-value: #aea89a; }
+@property --ink-faint { syntax: "<color>"; inherits: true; initial-value: #4a463c; }
+@property --line { syntax: "<color>"; inherits: true; initial-value: rgba(213, 208, 196, 0.08); }
+@property --line-strong { syntax: "<color>"; inherits: true; initial-value: rgba(213, 208, 196, 0.16); }
+@property --cell-line { syntax: "<color>"; inherits: true; initial-value: #1f1e1b; }
+@property --gold { syntax: "<color>"; inherits: true; initial-value: #c4a56a; }
+@property --gold-dim { syntax: "<color>"; inherits: true; initial-value: rgba(196, 165, 106, 0.16); }
+@property --live { syntax: "<color>"; inherits: true; initial-value: #8fa676; }
+@property --down { syntax: "<color>"; inherits: true; initial-value: #b06d52; }
+@property --wash { syntax: "<color>"; inherits: true; initial-value: rgba(213, 208, 196, 0.06); }
+@property --globe-rim { syntax: "<color>"; inherits: true; initial-value: rgba(8, 8, 8, 0.36); }
+
+html[data-fx-expose="1"] {
+  transition:
+    --void 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --void-2 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --ink 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --ink-soft 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --ink-dim 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --ink-faint 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --line 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --line-strong 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --cell-line 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --gold 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --gold-dim 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --live 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --down 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --wash 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    --globe-rim 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    background-color 1.35s cubic-bezier(0.45, 0.05, 0.15, 1),
+    color 1.35s cubic-bezier(0.45, 0.05, 0.15, 1);
+}
+
+.atlas .globe-disk { stroke: var(--ink); stroke-opacity: 0.42; }
+.atlas .globe-wire { stroke: var(--ink); stroke-opacity: 0.16; }
+.atlas .globe-sweep { stroke: var(--ink); }
+.atlas .globe-base { stroke: var(--ink); stroke-opacity: 0.4; }
+.atlas .globe-link { stroke: var(--ink); opacity: 0.32; }
+.atlas .globe-caption { fill: var(--ink); opacity: 0.32; }
+
+html[data-theme="light"] .atlas .globe-disk { stroke-opacity: 0.58; }
+html[data-theme="light"] .atlas .globe-wire { stroke-opacity: 0.4; }
+html[data-theme="light"] .atlas .globe-base { stroke-opacity: 0.5; }
+html[data-theme="light"] .atlas .globe-link { opacity: 0.42; }
+html[data-theme="light"] .atlas .globe-caption { opacity: 0.42; }
+
+.fx-grain {
   pointer-events: none;
   position: fixed;
   inset: 0;
-  z-index: 0;
-  overflow: hidden;
-  mix-blend-mode: screen;
-  opacity: 0.42;
+  z-index: 24;
+  opacity: 0;
+  background: url("../img/grain.png") repeat;
+  background-size: 160px 160px;
+  mix-blend-mode: overlay;
 }
 
-.voile-silk {
-  position: absolute;
-  top: 4%;
-  left: -18%;
-  width: 118%;
-  height: auto;
-  display: block;
-  animation: silk-blow 24s ease-in-out infinite;
-}
+html[data-fx-grain="1"] .fx-grain { opacity: 0.15; }
 
-@keyframes silk-blow {
-  0%, 100% { transform: translate3d(-6%, 2%, 0) rotate(-2deg); }
-  50% { transform: translate3d(10%, -3%, 0) rotate(2deg); }
-}
-
-html[data-theme="light"] .voile {
+html[data-theme="light"] .fx-grain {
   mix-blend-mode: multiply;
-  opacity: 0.18;
+}
+
+html[data-theme="light"][data-fx-grain="1"] .fx-grain { opacity: 0.09; }
+
+.fleet .val { font-variant-numeric: tabular-nums; }
+
+#fx-panel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 86;
+  width: 188px;
+  background: var(--void);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+#fx-panel header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 10px;
+}
+
+#fx-panel.is-min .fx-body { display: none; }
+#fx-panel.is-min header { border-bottom: 0; }
+
+#fx-panel .fx-min {
+  appearance: none;
+  background: none;
+  border: 0;
+  color: var(--ink-dim);
+  cursor: pointer;
+  font: inherit;
+  padding: 0 2px;
+}
+
+.fx-body { padding: 8px 10px 10px; }
+
+.fx-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  color: var(--ink-soft);
+}
+
+.fx-row input { accent-color: var(--gold); }
+
+.fx-row select {
+  appearance: none;
+  background: var(--void);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  font: inherit;
+  padding: 1px 6px;
 }
 
 .skip {
@@ -1736,5 +1840,5 @@ body.is-locked {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   .live i { animation: none; }
-  .voile-silk { animation: none; }
+
 }

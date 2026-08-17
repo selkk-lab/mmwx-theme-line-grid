@@ -32,12 +32,23 @@
     return v || fallback;
   }
 
-  function hexToRgba(hex, a) {
-    hex = String(hex || "").replace("#", "").trim();
+  function parseColor(v) {
+    v = String(v || "").trim();
+    const rgb = v.match(/rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)/i);
+    if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+    let hex = v.replace("#", "");
     if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
-    const n = parseInt(hex, 16);
-    if (!Number.isFinite(n)) return "rgba(213,208,196," + a + ")";
-    return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")";
+    if (/^[0-9a-f]{6}$/i.test(hex)) {
+      const n = parseInt(hex, 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    return null;
+  }
+
+  function hexToRgba(color, a) {
+    const p = parseColor(color);
+    if (!p) return "rgba(213,208,196," + a + ")";
+    return "rgba(" + p[0] + "," + p[1] + "," + p[2] + "," + a + ")";
   }
 
   function currentTheme() {
@@ -52,8 +63,7 @@
     return '<svg viewBox="0 0 16 16"><path d="M10.4 2.6a5.7 5.7 0 1 0 2.9 7.6 4.5 4.5 0 0 1-2.9-7.6z"/></svg>';
   }
 
-  function setTheme(mode) {
-    const next = mode === "light" ? "light" : "dark";
+  function paintTheme(next) {
     document.documentElement.setAttribute("data-theme", next);
     document.documentElement.style.colorScheme = next;
     localStorage.setItem("mmwx-theme", next);
@@ -63,6 +73,13 @@
     btn.setAttribute("aria-pressed", next === "light" ? "true" : "false");
     btn.setAttribute("aria-label", next === "light" ? "切换夜间模式" : "切换日间模式");
     btn.title = next === "light" ? "夜间" : "日间";
+    if (window.ProbeFX) ProbeFX.apply();
+  }
+
+  function setTheme(mode, opts) {
+    const next = mode === "light" ? "light" : "dark";
+    paintTheme(next);
+    if (opts && opts.after) opts.after();
   }
   const PAGES = ["overview", "ping", "traffic", "routes", "system"];
   const PAGE_LABEL = { overview: "Overview", ping: "Latency", traffic: "Traffic", routes: "Return", system: "System" };
@@ -873,8 +890,6 @@
     const R = 92;
     const lon0 = globeLon * Math.PI / 180;
     const lat0 = globeLat * Math.PI / 180;
-    const ink = hexToRgba(cssVar("--ink", "#d5d0c4"), 0.38);
-    const dim = hexToRgba(cssVar("--ink", "#d5d0c4"), 0.14);
     function ortho(lonD, latD) {
       const lon = lonD * Math.PI / 180;
       const lat = latD * Math.PI / 180;
@@ -895,25 +910,30 @@
         d += (started ? " L " : "M ") + p.x.toFixed(2) + " " + p.y.toFixed(2);
         started = true;
       }
-      return d ? '<path d="' + d + '" fill="none" stroke="' + dim + '" stroke-width="0.9"/>' : "";
+      return d ? '<path class="globe-wire" d="' + d + '" fill="none" stroke-width="0.9"/>' : "";
     }
     let wire =
       '<defs><radialGradient id="globe-shade" cx="38%" cy="36%" r="68%">' +
-        '<stop offset="0%" stop-color="' + cssVar("--ink", "#d5d0c4") + '" stop-opacity="0.05"/>' +
-        '<stop offset="70%" stop-color="' + cssVar("--ink", "#d5d0c4") + '" stop-opacity="0"/>' +
-        '<stop offset="100%" stop-color="' + cssVar("--void", "#0c0c0c") + '" stop-opacity="0.28"/>' +
+        '<stop offset="0%" stop-color="var(--ink)" stop-opacity="0.06"/>' +
+        '<stop offset="70%" stop-color="var(--ink)" stop-opacity="0"/>' +
+        '<stop offset="100%" stop-color="var(--globe-rim)" stop-opacity="1"/>' +
       "</radialGradient></defs>" +
-      '<circle class="globe-disk" cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="url(#globe-shade)" stroke="' + ink + '" stroke-width="1.05"/>';
+      '<circle class="globe-disk" cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="url(#globe-shade)" stroke="var(--ink)" stroke-width="1.05"/>';
     for (let lon = -180; lon < 180; lon += 30) wire += curve(lon, null, -80, 80, 4);
     for (let lat = -60; lat <= 60; lat += 30) wire += curve(null, lat, -180, 180, 4);
     wire += curve(null, 0, -180, 180, 3).replace('stroke-width="0.9"', 'stroke-width="1.15"');
     const sweepLon = ((Date.now() / 28) % 360) - 180;
+    const sweepBase = currentTheme() === "light" ? 0.52 : 0.42;
     for (let k = 0; k < 6; k += 1) {
       const lon = sweepLon - k * 8;
       const sweep = curve(lon, null, -80, 80, 3);
-      if (sweep) wire += sweep.replace('stroke-width="0.9"', 'stroke-width="' + (k === 0 ? 1.6 : 1.1) + '"').replace(dim, hexToRgba(cssVar("--ink", "#d5d0c4"), 0.42 - k * 0.06));
+      if (sweep) {
+        wire += sweep
+          .replace('class="globe-wire"', 'class="globe-sweep"')
+          .replace('stroke-width="0.9"', 'stroke-width="' + (k === 0 ? 1.6 : 1.1) + '" style="stroke-opacity:' + (sweepBase - k * 0.06).toFixed(2) + '"');
+      }
     }
-    wire += '<line x1="48" y1="' + (cy + R + 16) + '" x2="288" y2="' + (cy + R + 16) + '" stroke="' + ink + '" stroke-width="1"/>';
+    wire += '<line class="globe-base" x1="48" y1="' + (cy + R + 16) + '" x2="288" y2="' + (cy + R + 16) + '" stroke-width="1"/>';
     const laid = layoutGlobeLabels(cx, ortho);
     let links = "";
     const online = laid.filter(function (n) { return n.s.online; });
@@ -926,22 +946,22 @@
         const my = (a.py + b.py) / 2;
         const qx = cx + (mx - cx) * 0.42;
         const qy = cy + (my - cy) * 0.42;
-        links += '<path class="globe-link" d="M ' + a.px.toFixed(1) + " " + a.py.toFixed(1) + " Q " + qx.toFixed(1) + " " + qy.toFixed(1) + " " + b.px.toFixed(1) + " " + b.py.toFixed(1) + '" fill="none" stroke="' + ink + '" stroke-width="0.55" opacity="0.32"/>';
+        links += '<path class="globe-link" d="M ' + a.px.toFixed(1) + " " + a.py.toFixed(1) + " Q " + qx.toFixed(1) + " " + qy.toFixed(1) + " " + b.px.toFixed(1) + " " + b.py.toFixed(1) + '" fill="none" stroke-width="0.55"/>';
       });
     });
     const pins = laid.map(function (n) {
       const tx = n.end ? n.lx - 3 : n.lx + 3;
       return (
         '<g class="globe-node">' +
-          '<path d="M ' + n.px.toFixed(1) + " " + n.py.toFixed(1) + " L " + n.lx.toFixed(1) + " " + n.ly.toFixed(1) + '" fill="none" stroke="' + ink + '" stroke-width="0.75"/>' +
-          '<circle cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="2.1" fill="none" stroke="' + (n.s.online ? ink : cssVar("--down", "#b06d52")) + '" stroke-width="1"/>' +
-          '<text x="' + tx.toFixed(1) + '" y="' + (n.ly + 3).toFixed(1) + '" text-anchor="' + (n.end ? "end" : "start") + '" fill="' + cssVar("--ink-soft", "#b8b2a4") + '" font-size="8.5" font-family="IBM Plex Mono, monospace" stroke="' + cssVar("--void", "#0c0c0c") + '" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + n.label + "</text>" +
+          '<path d="M ' + n.px.toFixed(1) + " " + n.py.toFixed(1) + " L " + n.lx.toFixed(1) + " " + n.ly.toFixed(1) + '" fill="none" stroke="var(--ink)" stroke-width="0.75"/>' +
+          '<circle cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="2.1" fill="none" stroke="' + (n.s.online ? "var(--ink)" : "var(--down)") + '" stroke-width="1"/>' +
+          '<text x="' + tx.toFixed(1) + '" y="' + (n.ly + 3).toFixed(1) + '" text-anchor="' + (n.end ? "end" : "start") + '" fill="var(--ink-soft)" font-size="8.5" font-family="IBM Plex Mono, monospace" stroke="var(--void)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + n.label + "</text>" +
           '<circle class="hit" cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="9" fill="transparent" data-index="' + n.i + '"/>' +
         "</g>"
       );
     }).join("");
     return wire + links + pins +
-      '<text x="168" y="' + (cy + R + 28) + '" text-anchor="middle" fill="' + hexToRgba(cssVar("--ink", "#d5d0c4"), 0.28) + '" font-size="8" font-family="IBM Plex Mono, monospace" letter-spacing="1.4">' + globeCaption() + "</text>";
+      '<text class="globe-caption" x="168" y="' + (cy + R + 28) + '" text-anchor="middle" font-size="8" font-family="IBM Plex Mono, monospace" letter-spacing="1.4">' + globeCaption() + "</text>";
   }
 
   function globePanel() {
@@ -1175,6 +1195,7 @@
 
     if (r.node != null) renderWindow(r.node, r.page);
     else hideWindow();
+    if (window.ProbeFX) ProbeFX.tickCounts(main);
   }
 
   function openNode(index, page) {
@@ -1272,12 +1293,11 @@
     if (ev.key === "l") go(viewHash("list", route().node, route().page, "nodes"));
   }
 
-  setTheme(currentTheme());
+  setTheme(currentTheme(), { instant: true });
   const themeBtn = document.getElementById("theme-toggle");
   if (themeBtn) {
     themeBtn.addEventListener("click", function () {
-      setTheme(currentTheme() === "light" ? "dark" : "light");
-      render();
+      setTheme(currentTheme() === "light" ? "dark" : "light", { after: render });
     });
   }
 
@@ -1304,6 +1324,9 @@
   });
   window.addEventListener("hashchange", render);
   window.addEventListener("keydown", onKey);
+  document.addEventListener("mmwx-fx", function () {
+    if (main.querySelector(".atlas svg")) paintGlobe();
+  });
 
   function rebuildPulse() {
     const servers = state.servers || [];

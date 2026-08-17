@@ -6,12 +6,27 @@
     return v || fallback;
   }
 
+  function parseColor(v) {
+    v = String(v || "").trim();
+    const rgb = v.match(/rgba?\(\s*([\d.]+)\s*[, ]\s*([\d.]+)\s*[, ]\s*([\d.]+)/i);
+    if (rgb) return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
+    let hex = v.replace("#", "");
+    if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+    if (/^[0-9a-f]{6}$/i.test(hex)) {
+      const n = parseInt(hex, 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    return null;
+  }
+
+  function isLight() {
+    return document.documentElement.getAttribute("data-theme") === "light";
+  }
+
   function inkRgba(a) {
-    const hex = token("--ink", "#d5d0c4").replace("#", "");
-    const full = hex.length === 3 ? hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2] : hex;
-    const num = parseInt(full, 16);
-    if (!Number.isFinite(num)) return "rgba(213,208,196," + a + ")";
-    return "rgba(" + ((num >> 16) & 255) + "," + ((num >> 8) & 255) + "," + (num & 255) + "," + a + ")";
+    const p = parseColor(token("--ink", "#d5d0c4"));
+    if (!p) return "rgba(213,208,196," + a + ")";
+    return "rgba(" + p[0] + "," + p[1] + "," + p[2] + "," + a + ")";
   }
 
   function gold() { return token("--gold", "#c4a56a"); }
@@ -98,7 +113,7 @@
     const max = Math.max.apply(null, vals.concat([1]));
     const gap = 6;
     const bw = (w - gap * (vals.length + 1)) / Math.max(vals.length, 1);
-    const color = opt.color || inkRgba(0.4);
+    const color = opt.color || inkRgba(isLight() ? 0.58 : 0.4);
     const last = gold();
     const rects = vals.map(function (v, i) {
       const bh = Math.max(2, (v / max) * (h - 8));
