@@ -69,80 +69,15 @@ body {
   mix-blend-mode: screen;
 }
 
-.voile::before,
-.voile::after,
-.voile i {
-  position: absolute;
+.voile-svg {
+  width: 100%;
+  height: 100%;
   display: block;
-  border-radius: 50%;
-  background: radial-gradient(
-    ellipse 72% 64% at 50% 46%,
-    rgba(255, 255, 255, 0.045) 0%,
-    rgba(255, 255, 255, 0.02) 40%,
-    rgba(255, 255, 255, 0.16) 60%,
-    rgba(255, 255, 255, 0.05) 68%,
-    transparent 74%
-  );
-}
-
-.voile::before {
-  content: "";
-  width: 58vmax;
-  height: 42vmax;
-  left: -6%;
-  top: -8%;
-  animation: medusa-a 26s ease-in-out infinite;
-}
-
-.voile::after {
-  content: "";
-  width: 46vmax;
-  height: 36vmax;
-  right: -4%;
-  top: 18%;
-  opacity: 0.75;
-  animation: medusa-b 34s ease-in-out infinite;
-}
-
-.voile i {
-  width: 38vmax;
-  height: 30vmax;
-  left: 28%;
-  bottom: -10%;
-  opacity: 0.55;
-  animation: medusa-c 42s ease-in-out infinite;
-}
-
-@keyframes medusa-a {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
-  50% { transform: translate3d(12vw, 8vh, 0) scale(1.07); }
-}
-
-@keyframes medusa-b {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(1.04); }
-  50% { transform: translate3d(-10vw, 6vh, 0) scale(0.96); }
-}
-
-@keyframes medusa-c {
-  0%, 100% { transform: translate3d(0, 0, 0) scale(0.98); }
-  50% { transform: translate3d(7vw, -7vh, 0) scale(1.08); }
 }
 
 html[data-theme="light"] .voile {
-  mix-blend-mode: multiply;
-}
-
-html[data-theme="light"] .voile::before,
-html[data-theme="light"] .voile::after,
-html[data-theme="light"] .voile i {
-  background: radial-gradient(
-    ellipse 72% 64% at 50% 46%,
-    rgba(80, 58, 28, 0.04) 0%,
-    rgba(80, 58, 28, 0.02) 40%,
-    rgba(80, 58, 28, 0.14) 60%,
-    rgba(80, 58, 28, 0.04) 68%,
-    transparent 74%
-  );
+  mix-blend-mode: soft-light;
+  opacity: 0.7;
 }
 
 .skip {
@@ -1791,7 +1726,5 @@ body.is-locked {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   .live i { animation: none; }
-  .voile::before,
-  .voile::after,
-  .voile i { animation: none; }
+  .voile animate { display: none; }
 }

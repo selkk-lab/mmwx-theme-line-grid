@@ -18,7 +18,29 @@
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <div class="voile" aria-hidden="true"><i></i></div>
+  <div class="voile" aria-hidden="true">
+    <svg class="voile-svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <filter id="scarf-wind" x="-15%" y="-40%" width="130%" height="180%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.006 0.018" numOctaves="2" seed="3" result="n">
+            <animate attributeName="baseFrequency" dur="16s" values="0.006 0.018;0.01 0.026;0.006 0.018" repeatCount="indefinite"/>
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="n" scale="36" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <linearGradient id="scarf-fill" x1="0" y1="0" x2="1" y2="0.12">
+          <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+          <stop offset="0.28" stop-color="#fff" stop-opacity="0.06"/>
+          <stop offset="0.5" stop-color="#fff" stop-opacity="0.15"/>
+          <stop offset="0.72" stop-color="#fff" stop-opacity="0.06"/>
+          <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <g filter="url(#scarf-wind)">
+        <rect x="-80" y="210" width="1360" height="168" fill="url(#scarf-fill)"/>
+        <rect x="-80" y="268" width="1360" height="46" fill="#fff" opacity="0.045"/>
+      </g>
+    </svg>
+  </div>
   <a class="skip" href="#main">跳到内容</a>
   <div class="shell">
     <header class="top">
