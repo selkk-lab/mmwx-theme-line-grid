@@ -61,7 +61,7 @@ npx --yes serve .
 
 1. 运行 `pwsh -File scripts/pack-komari.ps1`，得到 `line-grid-komari.zip`
 2. 登录 Komari 后台 → 主题管理 → 上传该 zip 并启用
-3. 主题会读 Komari 的 `/api/nodes`、`/api/recent`、`/api/public`，大约每 2 秒刷新
+3. 主题会读 Komari 的 `GET /api/nodes`、`GET /api/public`，实时数据走官方 WebSocket `/api/clients`（连接后发送 `get`）
 
 也可以不打包，把本仓库整份拷到 Komari 主题目录，保证存在：
 
