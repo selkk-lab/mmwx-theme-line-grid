@@ -20,8 +20,6 @@
   --down: #b06d52;
   --wash: rgba(213, 208, 196, 0.06);
   --shadow: 0 24px 64px rgba(0, 0, 0, 0.4);
-  --haze: rgba(213, 208, 196, 0.1);
-  --haze-2: rgba(196, 165, 106, 0.045);
 }
 
 html[data-theme="light"] {
@@ -40,8 +38,6 @@ html[data-theme="light"] {
   --down: #8f4a30;
   --wash: rgba(42, 33, 20, 0.06);
   --shadow: 0 20px 48px rgba(42, 33, 20, 0.12);
-  --haze: rgba(255, 244, 214, 0.26);
-  --haze-2: rgba(180, 140, 70, 0.08);
 }
 
 * { box-sizing: border-box; }
@@ -64,98 +60,65 @@ body {
   position: relative;
 }
 
-.grain,
-.grain::after,
-.haze,
-.haze::before,
-.haze::after,
-.plate,
-.plate::before,
-.plate::after {
+.voile {
   pointer-events: none;
   position: fixed;
-}
-
-.grain,
-.haze,
-.plate {
   inset: 0;
   z-index: 0;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255, 252, 246, 0.04) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(255, 252, 246, 0.032) 0 1px, transparent 1px 3px);
+  mix-blend-mode: soft-light;
 }
 
-.grain::after {
-  content: "";
-  inset: 0;
-  opacity: 0.022;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-.haze {
-  inset: -30%;
-  overflow: hidden;
-}
-
-.haze::before,
-.haze::after {
+.voile::before {
   content: "";
   position: absolute;
-  border-radius: 50%;
-  filter: blur(88px);
-  will-change: transform;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    27deg,
+    rgba(255, 255, 255, 0.028) 0 1px,
+    transparent 1px 6px
+  );
+  opacity: 0.8;
 }
 
-.haze::before {
-  width: 78vmax;
-  height: 54vmax;
-  left: 4%;
-  top: 0;
-  background: radial-gradient(ellipse at center, var(--haze) 0%, transparent 68%);
-  animation: haze-a 72s ease-in-out infinite alternate;
-}
-
-.haze::after {
-  width: 94vmax;
-  height: 62vmax;
-  right: -8%;
-  bottom: -12%;
-  background: radial-gradient(ellipse at center, var(--haze-2) 0%, transparent 70%);
-  animation: haze-b 96s ease-in-out infinite alternate;
-}
-
-@keyframes haze-a {
-  from { transform: translate3d(-7%, -5%, 0) scale(1); }
-  to { transform: translate3d(11%, 8%, 0) scale(1.06); }
-}
-
-@keyframes haze-b {
-  from { transform: translate3d(8%, 6%, 0); }
-  to { transform: translate3d(-12%, -7%, 0); }
-}
-
-.plate { z-index: 0; }
-
-.plate::before,
-.plate::after {
+.voile::after {
   content: "";
-  opacity: 0.32;
+  position: absolute;
+  inset: -20% -40%;
+  background: linear-gradient(
+    118deg,
+    transparent 36%,
+    rgba(255, 255, 255, 0.018) 46%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.018) 54%,
+    transparent 64%
+  );
+  animation: voile-sheen 34s linear infinite;
 }
 
-.plate::before {
-  inset: 0 auto 0 0;
-  width: 20px;
-  background:
-    repeating-linear-gradient(to bottom, var(--ink-soft) 0 1px, transparent 1px 48px),
-    repeating-linear-gradient(to bottom, var(--ink-dim) 0 1px, transparent 1px 12px);
-  mask-image: linear-gradient(to right, #000 0%, transparent 100%);
+@keyframes voile-sheen {
+  from { transform: translate3d(-16%, 0, 0); }
+  to { transform: translate3d(16%, 0, 0); }
 }
 
-.plate::after {
-  inset: 0 0 auto 0;
-  height: 18px;
-  background:
-    repeating-linear-gradient(to right, var(--ink-soft) 0 1px, transparent 1px 48px),
-    repeating-linear-gradient(to right, var(--ink-dim) 0 1px, transparent 1px 12px);
-  mask-image: linear-gradient(to bottom, #000 0%, transparent 100%);
+html[data-theme="light"] .voile {
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.22) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay;
+}
+
+html[data-theme="light"] .voile::after {
+  background: linear-gradient(
+    118deg,
+    transparent 36%,
+    rgba(255, 255, 255, 0.08) 46%,
+    rgba(255, 255, 255, 0.32) 50%,
+    rgba(255, 255, 255, 0.08) 54%,
+    transparent 64%
+  );
 }
 
 .skip {
@@ -1804,6 +1767,5 @@ body.is-locked {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   .live i { animation: none; }
-  .haze::before,
-  .haze::after { animation: none; }
+  .voile::after { animation: none; }
 }
