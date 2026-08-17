@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#0c0c0c"/>
+  <g fill="none" stroke="#d5d0c4" stroke-width="1" opacity="0.45">
+    <circle cx="250" cy="176" r="110"/>
+    <ellipse cx="250" cy="176" rx="48" ry="110"/>
+    <ellipse cx="250" cy="176" rx="88" ry="110"/>
+    <ellipse cx="250" cy="176" rx="110" ry="38"/>
+    <ellipse cx="250" cy="176" rx="110" ry="78"/>
+    <line x1="140" y1="300" x2="360" y2="300"/>
+  </g>
+  <g fill="none" stroke="#d5d0c4" stroke-width="1.2">
+    <circle cx="292" cy="132" r="3"/>
+    <line x1="292" y1="132" x2="360" y2="108"/>
+    <circle cx="214" cy="198" r="3"/>
+    <line x1="214" y1="198" x2="148" y2="230"/>
+  </g>
+  <text x="430" y="150" fill="#d5d0c4" font-family="ui-monospace, monospace" font-size="22">line-grid</text>
+  <text x="430" y="178" fill="#aea89a" font-family="ui-monospace, monospace" font-size="12">ORTHOGRAPHIC</text>
+</svg>

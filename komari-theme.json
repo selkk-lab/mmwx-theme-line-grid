@@ -1,0 +1,7 @@
+{
+  "name": "line-grid",
+  "short": "line-grid",
+  "description": "线描正射探针主题。夜间炭灰、日间暖纸，可拖转地球，延迟示波器，支持 Komari 公共接口。",
+  "version": "0.2.0",
+  "author": "line-grid"
+}

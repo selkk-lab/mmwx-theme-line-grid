@@ -55,6 +55,30 @@ npx --yes serve .
 - 机器清单旁的图标：网格 / 列 / 横向，以及地球开/关
 - 地球可按住拖转；点节点打开详情窗口
 
+## Komari 用户
+
+朋友如果用的是 [Komari](https://github.com/komari-monitor/komari)，也可以直接当主题装：
+
+1. 运行 `pwsh -File scripts/pack-komari.ps1`，得到 `line-grid-komari.zip`
+2. 登录 Komari 后台 → 主题管理 → 上传该 zip 并启用
+3. 主题会读 Komari 的 `/api/nodes`、`/api/recent`、`/api/public`，大约每 2 秒刷新
+
+也可以不打包，把本仓库整份拷到 Komari 主题目录，保证存在：
+
+```text
+komari-theme.json
+preview.svg
+dist/index.html
+dist/css/app.css
+dist/js/*.js
+```
+
+Komari 没有三网延迟探测时，卡片上的延迟曲线会空着，CPU / 内存 / 硬盘 / 网速 / 累计流量仍会显示。
+
+地址加 `?src=komari` 可强制走 Komari 接口。
+
+Windows 请用仓库里的打包脚本，不要用资源管理器直接压缩，避免 zip 里出现反斜杠路径。
+
 ## 更新
 
 主题改动会单独提交到本仓库。若你是从本仓库拷进自己的探针站，更新时用新版本覆盖 `/line-grid/` 下同名文件即可，不要改主题名称。
