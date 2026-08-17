@@ -67,17 +67,27 @@ body {
   z-index: 0;
   overflow: hidden;
   mix-blend-mode: screen;
+  opacity: 0.42;
 }
 
-.voile-svg {
-  width: 100%;
-  height: 100%;
+.voile-silk {
+  position: absolute;
+  top: 4%;
+  left: -18%;
+  width: 118%;
+  height: auto;
   display: block;
+  animation: silk-blow 24s ease-in-out infinite;
+}
+
+@keyframes silk-blow {
+  0%, 100% { transform: translate3d(-6%, 2%, 0) rotate(-2deg); }
+  50% { transform: translate3d(10%, -3%, 0) rotate(2deg); }
 }
 
 html[data-theme="light"] .voile {
-  mix-blend-mode: soft-light;
-  opacity: 0.7;
+  mix-blend-mode: multiply;
+  opacity: 0.18;
 }
 
 .skip {
@@ -1726,5 +1736,5 @@ body.is-locked {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   .live i { animation: none; }
-  .voile animate { display: none; }
+  .voile-silk { animation: none; }
 }
