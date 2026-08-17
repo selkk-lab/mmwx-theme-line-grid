@@ -1441,12 +1441,6 @@
   ProbeAPI.fetchServers().then(function (payload) {
     if (!payload || payload.enabled === false) return;
     applyLive(payload);
-    if (payload._source === "komari") {
-      setInterval(function () {
-        ProbeAPI.fetchServers().then(function (next) { if (next) applyLive(next); });
-      }, 2000);
-    } else {
-      ProbeAPI.connectWS(applyLive);
-    }
+    ProbeAPI.connectWS(applyLive);
   });
 })();

@@ -48,6 +48,8 @@
     }, Promise.resolve(null));
   }
 
+  let lastSource = "";
+
   function forcedSource() {
     const q = new URLSearchParams(location.search).get("src");
     if (q) return q;
@@ -59,18 +61,22 @@
     if (!global.KomariAdapt) return Promise.resolve(null);
     return Promise.all([
       getJSON("/api/nodes"),
-      getJSON("/api/recent"),
       getJSON("/api/public"),
     ]).then(function (parts) {
       if (!KomariAdapt.looksLikeNodes(parts[0])) return null;
-      return KomariAdapt.toPayload(parts[0], parts[1], parts[2]);
+      KomariAdapt.remember(parts[0], parts[1]);
+      lastSource = "komari";
+      return KomariAdapt.toPayload(parts[0], null, parts[1]);
     });
   }
 
   function fetchServers() {
     if (forcedSource() === "komari") return fetchKomari();
     return firstJSON(["/api/probe", "/api/public/probe-servers"]).then(function (data) {
-      if (data && data.servers) return data;
+      if (data && data.servers) {
+        lastSource = "mmwx";
+        return data;
+      }
       return fetchKomari().then(function (k) { return k || data; });
     });
   }
@@ -87,7 +93,44 @@
     ]);
   }
 
+  function connectKomari(onPayload) {
+    const root = base();
+    if (!root && location.protocol === "file:") return null;
+    const http = root || (location.protocol + "//" + location.host);
+    const wsRoot = http.replace(/^http/i, "ws");
+    let timer = null;
+    let ws = null;
+    function ask() {
+      if (ws && ws.readyState === 1) {
+        try { ws.send("get"); } catch (err) {}
+      }
+    }
+    try {
+      ws = new WebSocket(wsRoot + "/api/clients");
+    } catch (err) {
+      return null;
+    }
+    ws.onopen = function () {
+      ask();
+      timer = setInterval(ask, 2000);
+    };
+    ws.onmessage = function (ev) {
+      let msg = ev.data;
+      if (msg === "get") return;
+      try {
+        if (typeof msg === "string") msg = JSON.parse(msg);
+      } catch (err) { return; }
+      if (!msg || typeof msg !== "object") return;
+      onPayload(KomariAdapt.toPayload(null, msg, null));
+    };
+    ws.onclose = function () {
+      if (timer) clearInterval(timer);
+    };
+    return ws;
+  }
+
   function connectWS(onPayload) {
+    if (forcedSource() === "komari" || lastSource === "komari") return connectKomari(onPayload);
     const root = base();
     if (!root && location.protocol === "file:") return null;
     const http = root || (location.protocol + "//" + location.host);
@@ -97,7 +140,10 @@
     let i = 0;
     let ws = null;
     function open() {
-      if (i >= paths.length) return;
+      if (i >= paths.length) {
+        connectKomari(onPayload);
+        return;
+      }
       try {
         ws = new WebSocket(wsRoot + paths[i] + q);
       } catch (err) {
