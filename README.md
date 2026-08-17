@@ -55,32 +55,12 @@ npx --yes serve .
 - 机器清单旁的图标：网格 / 列 / 横向，以及地球开/关
 - 地球可按住拖转；点节点打开详情窗口
 
-## Komari 用户
+## Komari 专版
 
-朋友如果用的是 [Komari](https://github.com/komari-monitor/komari)，也可以直接当主题装：
+Komari 用户请看独立教程：[KOMARI.md](./KOMARI.md)
 
-1. 运行 `pwsh -File scripts/pack-komari.ps1`，得到 `line-grid-komari.zip`
-2. 登录 Komari 后台 → 主题管理 → 上传该 zip 并启用
-3. 主题会读 Komari 的 `GET /api/nodes`、`GET /api/public`，实时数据走官方 WebSocket `/api/clients`（连接后发送 `get`）
-4. 延迟曲线来自 `GET /api/records/ping`；网速/流量按官方字段 `network.down` / `network.up` / `network.totalDown` / `network.totalUp`
-
-Komari 要求主题 `short` 只能是字母数字，本包标识是 `linegrid`（显示名仍是 line-grid）。`index.html` 的标题和描述用官方占位原文，方便后台注入站点名。
-
-也可以不打包，把本仓库整份拷到 Komari 主题目录，保证存在：
-
-```text
-komari-theme.json
-preview.svg
-dist/index.html
-dist/css/app.css
-dist/js/*.js
-```
-
-Komari 没有三网延迟探测时，卡片上的延迟曲线会空着，CPU / 内存 / 硬盘 / 网速 / 累计流量仍会显示。
-
-地址加 `?src=komari` 可强制走 Komari 接口。
-
-Windows 请用仓库里的打包脚本，不要用资源管理器直接压缩，避免 zip 里出现反斜杠路径。
+简要：用 `scripts/pack-komari.ps1` 打出 zip → 后台「主题管理」上传 → 启用 **linegrid**。  
+不要用资源管理器直接压缩。详细步骤、接口说明和排错都在那份教程里。
 
 ## 更新
 
