@@ -71,7 +71,7 @@
     appearance: { theme: "line-grid", color_mode: "dark", revision: 1 },
     block_login: false,
     show_name: true,
-    show_globe: false,
+    show_globe: true,
     license_badge: { name: "mmwx", display_name: "妙妙屋X" },
     servers: [
       {

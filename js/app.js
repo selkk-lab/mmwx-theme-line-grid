@@ -12,7 +12,11 @@
   let range = "1h";
   let targetKey = "";
   let lastFocus = null;
-  let lastView = "grid";
+  let lastView = "list";
+  let fastestI = -1;
+  let sortKey = "ms";
+  let sortDir = 1;
+  let findQ = "";
   let home = "nodes";
   let showGlobe = localStorage.getItem("mmwx-globe") !== "0";
   let globeLon = 80;
@@ -146,6 +150,92 @@
     return p ? p.loss_pct : 0;
   }
 
+  function pingBand(server) {
+    if (!server || !server.online) return "down";
+    const ms = pingMs(server);
+    if (ms < 0) return "down";
+    if (ms > 180) return "bad";
+    if (ms >= 120) return "hot";
+    if (ms >= 80) return "ok";
+    return "fast";
+  }
+
+  function lossBand(server) {
+    if (!server || !server.online) return "down";
+    const l = pingLoss(server);
+    if (l == null || !isFinite(l)) return "ok";
+    if (l >= 1) return "bad";
+    if (l >= 0.3) return "hot";
+    return "ok";
+  }
+
+  function pingColor(server) {
+    const b = pingBand(server);
+    if (b === "fast") return cssVar("--live", "#8fa676");
+    if (b === "hot") return cssVar("--gold", "#c4a56a");
+    if (b === "bad" || b === "down") return cssVar("--down", "#b06d52");
+    return cssVar("--ink", "#d5d0c4");
+  }
+
+  function fmtLoss(server) {
+    if (!server || !server.online) return "—";
+    const l = pingLoss(server);
+    if (l == null || !isFinite(l)) return "—";
+    if (l < 0.005) return "0%";
+    if (l < 1) return l.toFixed(2) + "%";
+    return l.toFixed(1) + "%";
+  }
+
+  function pingReadout(server) {
+    const ms = pingMs(server);
+    const msTxt = ms < 0 ? "—" : ms + " ms";
+    return '<span class="ping-read"><b class="is-' + pingBand(server) + '">' + msTxt + '</b><i class="is-' + lossBand(server) + '">' + fmtLoss(server) + "</i></span>";
+  }
+
+  function daysUntil(iso) {
+    if (!iso) return null;
+    const t = new Date(iso + "T00:00:00").getTime();
+    if (!isFinite(t)) return null;
+    return Math.round((t - Date.now()) / 86400000);
+  }
+
+  function monthCost() {
+    return (state.servers || []).reduce(function (a, s) {
+      const c = s.renewal_price_cny || 0;
+      if (s.renewal_cycle === "year") return a + c / 12;
+      if (s.renewal_cycle === "quarter") return a + c / 3;
+      if (s.renewal_cycle === "half_year") return a + c / 6;
+      return a + c;
+    }, 0);
+  }
+
+  function refreshMarks() {
+    fastestI = -1;
+    let best = Infinity;
+    (state.servers || []).forEach(function (s, i) {
+      if (!s.online) return;
+      const ms = pingMs(s);
+      if (ms >= 0 && ms < best) {
+        best = ms;
+        fastestI = i;
+      }
+    });
+  }
+
+  function nodeTags(server, i) {
+    let html = "";
+    if (i === fastestI && server.online) html += '<span class="mark mark-fast">最快</span>';
+    const d = daysUntil(server.expires_at);
+    if (d != null && d <= 14) html += '<span class="mark mark-due">' + (d < 0 ? "到期" : d + "天") + "</span>";
+    return html;
+  }
+
+  function loadBand(p) {
+    if (p >= 90) return " is-bad";
+    if (p >= 70) return " is-hot";
+    return "";
+  }
+
   function dailyStats(server) {
     const rows = server.daily_traffic || [];
     const vals = rows.map(function (r) { return r.total; });
@@ -176,7 +266,7 @@
   function route() {
     const raw = (location.hash || "#/").replace(/^#/, "") || "/";
     const parts = raw.split("/").filter(Boolean);
-    let view = "grid";
+    let view = lastView || "list";
     let node = null;
     let page = "overview";
     let section = "nodes";
@@ -216,10 +306,11 @@
       if (node == null) return "#/" + sec;
       return "#/" + sec + "/node/" + node + (page && page !== "overview" ? "/" + page : "");
     }
-    const base = !view || view === "grid" ? "" : "/" + view;
-    if (node == null) return "#" + (base || "/");
+    const v = view || lastView || "list";
+    const base = "/" + v;
+    if (node == null) return "#" + base;
     const rest = page && page !== "overview" ? "/" + page : "";
-    return "#" + (base || "") + "/node/" + node + rest;
+    return "#" + base + "/node/" + node + rest;
   }
 
   function go(hash, ev) {
@@ -260,14 +351,13 @@
     });
   }
 
-  function sparkOf(server, tall) {
+  function sparkOf(server, tall, hideRead) {
     const p = primaryPing(server);
     const vals = p && p.buckets ? p.buckets.map(function (b) { return b.ms; }) : [20, 22, 21, 24, 23];
-    const ms = pingMs(server);
     return (
       '<div class="spark-wrap">' +
-        ProbeCharts.spark(vals, { w: tall ? 420 : 240, h: tall ? 64 : 40, color: ms >= 100 ? cssVar("--gold", "#c4a56a") : cssVar("--ink", "#d5d0c4"), tips: pingTips(vals, 5) }) +
-        (tall ? "" : '<span class="ms' + (ms >= 100 ? " is-hot" : "") + '">' + (ms < 0 ? "—" : String(ms).padStart(3, "0") + " ms") + "</span>") +
+        ProbeCharts.spark(vals, { w: tall ? 420 : 240, h: tall ? 64 : 40, color: pingColor(server), tips: pingTips(vals, 5) }) +
+        (tall || hideRead ? "" : pingReadout(server)) +
       "</div>"
     );
   }
@@ -311,18 +401,18 @@
     const cpu = server.cpu_pct == null ? 0 : server.cpu_pct;
     return (
       '<div class="meters">' +
-        '<div class="meter"><span>CPU ' + Math.round(cpu) + '%</span><i style="--p:' + cpu + '%"></i></div>' +
-        '<div class="meter"><span>内存 ' + Math.round(mem) + '%</span><i style="--p:' + mem + '%"></i></div>' +
-        '<div class="meter"><span>硬盘 ' + Math.round(disk) + '%</span><i style="--p:' + disk + '%"></i></div>' +
+        '<div class="meter' + loadBand(cpu) + '"><span>CPU ' + Math.round(cpu) + '%</span><i style="--p:' + cpu + '%"></i></div>' +
+        '<div class="meter' + loadBand(mem) + '"><span>内存 ' + Math.round(mem) + '%</span><i style="--p:' + mem + '%"></i></div>' +
+        '<div class="meter' + loadBand(disk) + '"><span>硬盘 ' + Math.round(disk) + '%</span><i style="--p:' + disk + '%"></i></div>' +
       "</div>"
     );
   }
 
   function cardTone(server) {
-    if (!server.online) return " is-down";
-    const ms = pingMs(server);
-    if (ms >= 150) return " is-bad";
-    if (ms >= 100) return " is-hot";
+    const b = pingBand(server);
+    if (b === "down" || b === "bad") return " is-bad";
+    if (b === "hot") return " is-hot";
+    if (b === "fast") return " is-fast";
     return " is-ok";
   }
 
@@ -349,13 +439,15 @@
             '<div class="head">' +
               '<span class="cc">' + (server.region_country || "") + "</span>" +
               '<span class="name">' + (server.name || "未命名") + "</span>" +
+              nodeTags(server, i) +
               '<span class="dot' + (server.online ? "" : " is-off") + '"></span>' +
               '<span class="status">' + (server.online ? "在线" : "离线") + "</span>" +
             "</div>" +
             '<div class="speeds">' +
               '<span>实时网速　↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></span>" +
             "</div>" +
-            sparkOf(server) +
+            pingReadout(server) +
+            sparkOf(server, false, true) +
             meters(server) +
             quotaBar(server) +
             '<div class="meta">' +
@@ -368,15 +460,14 @@
   }
 
   function row(server, i) {
-    const ms = pingMs(server);
     return (
-      '<button class="row" data-index="' + i + '" type="button">' +
+      '<button class="row' + cardTone(server) + '" data-index="' + i + '" type="button">' +
         '<span class="cc">' + (server.region_country || "") + "</span>" +
-        '<span class="name">' + (server.name || "未命名") + "</span>" +
+        '<span class="name">' + (server.name || "未命名") + nodeTags(server, i) + "</span>" +
         '<span class="status">' + (server.online ? "在线" : "离线") + "</span>" +
         '<span class="speeds">↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></span>" +
-        '<span class="ms' + (ms >= 100 ? " is-hot" : "") + '">' + (ms < 0 ? "—" : ms + " ms") + "</span>" +
-        sparkOf(server) +
+        pingReadout(server) +
+        sparkOf(server, false, true) +
         '<span class="hide-sm">' + Math.round(server.cpu_pct || 0) + "%</span>" +
         '<span class="hide-sm">' + Math.round(pct(server.mem_used, server.mem_total)) + "%</span>" +
         '<span class="hide-sm">' + Math.round(pct(server.disk_used, server.disk_total)) + "%</span>" +
@@ -389,8 +480,10 @@
   function listHead() {
     return (
       '<div class="row row-h" aria-hidden="true">' +
-        "<span>地区</span><span>名称</span><span>状态</span><span>实时网速</span><span>延迟</span><span>曲线</span>" +
-        "<span>CPU</span><span>内存</span><span>硬盘</span><span>流量</span><span>在线</span>" +
+        sortHead("cc", "地区") + sortHead("name", "名称") + "<span>状态</span>" + sortHead("up", "实时网速") +
+        sortHead("ms", "延迟") + "<span>曲线</span>" +
+        sortHead("cpu", "CPU") + sortHead("mem", "内存") + sortHead("disk", "硬盘") +
+        sortHead("traffic", "流量") + sortHead("days", "在线") +
       "</div>"
     );
   }
@@ -398,7 +491,6 @@
   function slab(server, i) {
     const ms = pingMs(server);
     const st = dailyStats(server);
-    const last7 = (server.daily_traffic || []).slice(-7);
     const routes = (server.return_routes || []).map(function (rt) {
       return (CARRIER[rt.carrier] || rt.carrier) + " <b>" + (rt.route_type || "—") + "</b>";
     }).join("　");
@@ -408,6 +500,7 @@
           '<div class="head">' +
             '<span class="cc">' + (server.region_country || "") + "</span>" +
             '<span class="name">' + (server.name || "未命名") + "</span>" +
+            nodeTags(server, i) +
             '<span class="dot' + (server.online ? "" : " is-off") + '"></span>' +
             '<span class="status">' + (server.online ? "在线" : "离线") + " · " + (server.region_city || server.region_name || "") + "</span>" +
           "</div>" +
@@ -415,20 +508,20 @@
         "</div>" +
         '<div class="slab-grid">' +
           "<div>" +
-            '<div class="slab-ms' + (ms >= 100 ? " is-hot" : "") + '">' + (ms < 0 ? "—" : ms) + "<small>MS</small></div>" +
+            '<div class="slab-ms is-' + pingBand(server) + '">' + (ms < 0 ? "—" : ms) + "<small>ms</small></div>" +
+            '<div class="slab-loss is-' + lossBand(server) + '">' + fmtLoss(server) + "</div>" +
             '<div class="speeds">↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></div>" +
             sparkOf(server, true) +
           "</div>" +
           "<div>" +
             meters(server) +
-            '<div style="margin-top:14px">' + quotaBar(server) + "</div>" +
-            '<div class="meta" style="margin-top:10px">' +
+            '<div class="slab-quota">' + quotaBar(server) + "</div>" +
+            '<div class="meta">' +
               "<span>在线 " + fmtDays(server.uptime) + "</span>" +
             "</div>" +
           "</div>" +
           "<div>" +
-            '<div class="stat-col" style="margin-bottom:8px">近 7 日　均 ' + fmtBytes(st.avg, 1) + "　丢包 " + pingLoss(server).toFixed(2) + "%</div>" +
-            ProbeCharts.bars(last7, { w: 280, h: 52, tips: trafficTips(last7) }) +
+            '<div class="stat-col">近 7 日均 ' + fmtBytes(st.avg, 1) + "</div>" +
             '<div class="slab-routes">' + (routes || "暂无回程") + "</div>" +
           "</div>" +
         "</div>" +
@@ -477,12 +570,14 @@
     });
     const down = (state.servers || []).reduce(function (a, s) { return a + (s.download_speed || 0); }, 0);
     const up = (state.servers || []).reduce(function (a, s) { return a + (s.upload_speed || 0); }, 0);
+    const cost = monthCost();
     return (
       '<section class="fleet" aria-label="集群概览">' +
         "<article><div class='lbl'>节点</div><div class='val'>" + t.all + "</div><div class='sub'>在线 " + t.online + " · 离线 " + (t.all - t.online) + "</div></article>" +
         "<article><div class='lbl'>地区</div><div class='val'>" + Object.keys(regions).length + "</div><div class='sub'>独立地域</div></article>" +
         "<article><div class='lbl'>下行合计</div><div class='val'>" + fmtSpeed(down) + "</div><div class='sub'>上行 " + fmtSpeed(up) + "</div></article>" +
         "<article><div class='lbl'>周期流量</div><div class='val'>" + fmtBytes(t.used, 1) + "</div><div class='sub'>限额 " + fmtBytes(t.limit, 2) + "</div></article>" +
+        "<article><div class='lbl'>月均成本</div><div class='val'>¥" + cost.toFixed(0) + "</div><div class='sub'>按续费折算</div></article>" +
       "</section>"
     );
   }
@@ -518,14 +613,58 @@
     }
   }
 
+  function escAttr(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;");
+  }
+
+  function cmpServer(a, b, key) {
+    function num(v) { return v == null || v < 0 ? 1e9 : v; }
+    if (key === "ms") return num(pingMs(a)) - num(pingMs(b));
+    if (key === "loss") return (pingLoss(a) || 0) - (pingLoss(b) || 0);
+    if (key === "cpu") return (a.cpu_pct || 0) - (b.cpu_pct || 0);
+    if (key === "mem") return pct(a.mem_used, a.mem_total) - pct(b.mem_used, b.mem_total);
+    if (key === "disk") return pct(a.disk_used, a.disk_total) - pct(b.disk_used, b.disk_total);
+    if (key === "traffic") return pct(a.traffic_used, a.traffic_limit) - pct(b.traffic_used, b.traffic_limit);
+    if (key === "up") return (a.download_speed || 0) - (b.download_speed || 0);
+    if (key === "days") return (a.uptime || 0) - (b.uptime || 0);
+    if (key === "name") return (a.name || "").localeCompare(b.name || "", "zh");
+    if (key === "cc") return (a.region_country || "").localeCompare(b.region_country || "");
+    return 0;
+  }
+
   function listedServers() {
-    return (state.servers || []).map(function (s, i) { return { s: s, i: i }; });
+    let items = (state.servers || []).map(function (s, i) { return { s: s, i: i }; });
+    if (findQ) {
+      const q = findQ.toLowerCase();
+      items = items.filter(function (it) {
+        const s = it.s;
+        return ((s.name || "").toLowerCase().indexOf(q) >= 0)
+          || ((s.region_country || "").toLowerCase().indexOf(q) >= 0)
+          || ((s.region_city || "").toLowerCase().indexOf(q) >= 0)
+          || ((s.region_name || "").toLowerCase().indexOf(q) >= 0);
+      });
+    }
+    const dir = sortDir;
+    const key = sortKey;
+    items.sort(function (a, b) { return cmpServer(a.s, b.s, key) * dir; });
+    return items;
+  }
+
+  function sortHead(key, label) {
+    const on = sortKey === key;
+    return '<button type="button" class="sort' + (on ? " is-on" : "") + '" data-sort="' + key + '">' + label + (on ? (sortDir > 0 ? " ↑" : " ↓") : "") + "</button>";
   }
 
   function listToolbar(r) {
     return (
       '<div class="list-bar" id="views">' +
-        '<span class="list-bar-k">机器清单</span>' +
+        '<div class="list-bar-left">' +
+          '<span class="list-bar-k">机器清单</span>' +
+          '<input class="find" data-find type="search" placeholder="筛选" value="' + escAttr(findQ) + '" autocomplete="off" spellcheck="false">' +
+        "</div>" +
         '<div class="views">' +
           '<button class="icon-btn' + (r.view === "grid" ? " is-on" : "") + '" data-view="grid" type="button" aria-label="网格排列" title="网格">' + iconGrid() + "</button>" +
           '<button class="icon-btn' + (r.view === "column" ? " is-on" : "") + '" data-view="column" type="button" aria-label="列排列" title="列">' + iconColumn() + "</button>" +
@@ -549,6 +688,7 @@
   }
 
   function renderGrid(r) {
+    refreshMarks();
     const items = listedServers();
     main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + (items.length
       ? '<section class="board" aria-label="网格排列">' + items.map(function (item) {
@@ -558,6 +698,7 @@
   }
 
   function renderColumn(r) {
+    refreshMarks();
     const items = listedServers();
     main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + '<section class="stack" aria-label="列排列">' + items.map(function (item) {
       return slab(item.s, item.i);
@@ -565,6 +706,7 @@
   }
 
   function renderList(r) {
+    refreshMarks();
     const items = listedServers();
     main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + '<section class="list" aria-label="横向排列">' + listHead() + items.map(function (item) {
       return row(item.s, item.i);
@@ -600,7 +742,8 @@
           "</div>" +
         "</div>" +
         '<div class="hero-pulse">' +
-          '<div class="ms-xl">' + (ms < 0 ? "—" : ms) + "<small>MS</small></div>" +
+          '<div class="ms-xl is-' + pingBand(s) + '">' + (ms < 0 ? "—" : ms) + "<small>ms</small></div>" +
+          '<div class="hero-loss is-' + lossBand(s) + '">' + fmtLoss(s) + "</div>" +
         "</div>" +
       "</header>"
     );
@@ -620,7 +763,7 @@
         "</section>" +
         '<section class="panels" style="min-height:0;height:100%">' +
           '<div class="chart-fill"><div class="panel-h"><h3>延迟</h3><span class="hero-sub">丢包 ' + (ctx.ping ? ctx.ping.loss_pct.toFixed(2) : "0.00") + "%</span></div>" +
-            ProbeCharts.spark(ctx.sparkVals, { w: 640, h: 180, color: cssVar("--ink", "#d5d0c4"), tips: pingTips(ctx.sparkVals, 5) }) +
+            ProbeCharts.spark(ctx.sparkVals, { w: 640, h: 180, color: pingColor(s), tips: pingTips(ctx.sparkVals, 5) }) +
           "</div>" +
           '<div class="chart-fill"><div class="panel-h"><h3>近 7 日</h3><span class="hero-sub">均 ' + fmtBytes(ctx.st.avg, 1) + "</span></div>" +
             ProbeCharts.bars(ctx.last7, { w: 360, h: 180 }) +
@@ -645,10 +788,11 @@
         '<div class="chart-fill">' +
           '<div class="targets">' +
             (s.ping || []).map(function (p) {
-              return '<button type="button" class="chip' + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " · " + p.current_ms + "ms</button>";
+              const fake = { online: s.online, ping: [p] };
+              return '<button type="button" class="chip is-' + pingBand(fake) + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " · <b>" + p.current_ms + "ms</b> <i>" + fmtLoss(fake) + "</i></button>";
             }).join("") +
           "</div>" +
-          ProbeCharts.spark(ctx.sparkVals, { w: 960, h: 260, color: cssVar("--ink", "#d5d0c4"), tips: pingTips(ctx.sparkVals, range === "24h" ? 30 : range === "6h" ? 10 : 5) }) +
+          ProbeCharts.spark(ctx.sparkVals, { w: 960, h: 260, color: pingColor(s), tips: pingTips(ctx.sparkVals, range === "24h" ? 30 : range === "6h" ? 10 : 5) }) +
         "</div>" +
         ProbeCharts.wave({ w: 960, h: 48 }) +
       "</article>"
@@ -884,6 +1028,75 @@
     return items;
   }
 
+  function clipToLimb(visLL, hidLL, ortho) {
+    let lon0 = visLL[0];
+    let lat0 = visLL[1];
+    let lon1 = hidLL[0];
+    let lat1 = hidLL[1];
+    if (lon1 - lon0 > 180) lon1 -= 360;
+    if (lon0 - lon1 > 180) lon0 -= 360;
+    let lo = 0;
+    let hi = 1;
+    let best = ortho(lon0, lat0);
+    for (let k = 0; k < 7; k += 1) {
+      const t = (lo + hi) / 2;
+      const p = ortho(lon0 + (lon1 - lon0) * t, lat0 + (lat1 - lat0) * t);
+      if (p) {
+        lo = t;
+        best = p;
+      } else {
+        hi = t;
+      }
+    }
+    return best;
+  }
+
+  function landPathData(ortho) {
+    const rings = window.ProbeLand || [];
+    let fill = "";
+    let stroke = "";
+    for (let r = 0; r < rings.length; r += 1) {
+      const ring = rings[r];
+      const n = ring.length;
+      if (n < 3) continue;
+      const vis = new Array(n);
+      for (let i = 0; i < n; i += 1) vis[i] = ortho(ring[i][0], ring[i][1]);
+      let d = "";
+      let drawing = false;
+      for (let i = 0; i < n; i += 1) {
+        const a = vis[i];
+        const b = vis[(i + 1) % n];
+        if (a && b) {
+          if (!drawing) {
+            d += "M " + a.x.toFixed(1) + " " + a.y.toFixed(1);
+            drawing = true;
+          }
+          d += " L " + b.x.toFixed(1) + " " + b.y.toFixed(1);
+        } else if (a && !b) {
+          const c = clipToLimb(ring[i], ring[(i + 1) % n], ortho);
+          if (!drawing) {
+            d += "M " + a.x.toFixed(1) + " " + a.y.toFixed(1);
+            drawing = true;
+          }
+          if (c) d += " L " + c.x.toFixed(1) + " " + c.y.toFixed(1);
+          drawing = false;
+        } else if (!a && b) {
+          const c = clipToLimb(ring[(i + 1) % n], ring[i], ortho);
+          if (c) {
+            d += "M " + c.x.toFixed(1) + " " + c.y.toFixed(1);
+            drawing = true;
+          }
+          d += " L " + b.x.toFixed(1) + " " + b.y.toFixed(1);
+        }
+      }
+      if (d) {
+        fill += d + " Z ";
+        stroke += d + " ";
+      }
+    }
+    return { fill: fill, stroke: stroke };
+  }
+
   function globeMarkup() {
     const cx = 168;
     const cy = 112;
@@ -918,7 +1131,13 @@
         '<stop offset="70%" stop-color="var(--ink)" stop-opacity="0"/>' +
         '<stop offset="100%" stop-color="var(--globe-rim)" stop-opacity="1"/>' +
       "</radialGradient></defs>" +
+      '<circle class="globe-ocean" cx="' + cx + '" cy="' + cy + '" r="' + R + '" />' +
       '<circle class="globe-disk" cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="url(#globe-shade)" stroke="var(--ink)" stroke-width="1.05"/>';
+    const land = landPathData(ortho);
+    if (land.fill) {
+      wire += '<path class="globe-land" d="' + land.fill + '" />';
+      wire += '<path class="globe-coast" d="' + land.stroke + '" fill="none" />';
+    }
     for (let lon = -180; lon < 180; lon += 30) wire += curve(lon, null, -80, 80, 4);
     for (let lat = -60; lat <= 60; lat += 30) wire += curve(null, lat, -180, 180, 4);
     wire += curve(null, 0, -180, 180, 3).replace('stroke-width="0.9"', 'stroke-width="1.15"');
@@ -954,7 +1173,7 @@
       return (
         '<g class="globe-node">' +
           '<path d="M ' + n.px.toFixed(1) + " " + n.py.toFixed(1) + " L " + n.lx.toFixed(1) + " " + n.ly.toFixed(1) + '" fill="none" stroke="var(--ink)" stroke-width="0.75"/>' +
-          '<circle cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="2.1" fill="none" stroke="' + (n.s.online ? "var(--ink)" : "var(--down)") + '" stroke-width="1"/>' +
+          '<circle cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="2.1" fill="none" stroke="' + pingColor(n.s) + '" stroke-width="1.15"/>' +
           '<text x="' + tx.toFixed(1) + '" y="' + (n.ly + 3).toFixed(1) + '" text-anchor="' + (n.end ? "end" : "start") + '" fill="var(--ink-soft)" font-size="8.5" font-family="IBM Plex Mono, monospace" stroke="var(--void)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + n.label + "</text>" +
           '<circle class="hit" cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="9" fill="transparent" data-index="' + n.i + '"/>' +
         "</g>"
@@ -973,7 +1192,14 @@
     });
     const side = Object.keys(regions).map(function (k) {
       const cc = k.split(" · ")[0];
-      return '<button type="button" class="reg" data-aim="' + cc + '"><span>' + k + "</span><b>" + regions[k] + "</b></button>";
+      let best = null;
+      (state.servers || []).forEach(function (s) {
+        const label = (s.region_country || "") + " · " + (s.region_city || s.region_name || "");
+        if (label !== k) return;
+        if (!best || (pingMs(s) >= 0 && (pingMs(best) < 0 || pingMs(s) < pingMs(best)))) best = s;
+      });
+      const ms = best ? pingMs(best) : -1;
+      return '<button type="button" class="reg" data-aim="' + cc + '"><span>' + k + '</span><b class="is-' + (best ? pingBand(best) : "ok") + '">' + (ms < 0 ? "—" : ms + "ms") + "</b></button>";
     }).join("");
     return (
       '<section class="home-globe" aria-label="节点地球">' +
@@ -1110,13 +1336,7 @@
       });
       last7.push({ date: date, uplink: up, downlink: down, total: up + down });
     }
-    const monthCost = servers.reduce(function (a, s) {
-      const c = s.renewal_price_cny || 0;
-      if (s.renewal_cycle === "year") return a + c / 12;
-      if (s.renewal_cycle === "quarter") return a + c / 3;
-      if (s.renewal_cycle === "half_year") return a + c / 6;
-      return a + c;
-    }, 0);
+    const monthCostVal = monthCost();
     const ranked = servers.slice().sort(function (a, b) {
       return pct(b.traffic_used, b.traffic_limit) - pct(a.traffic_used, a.traffic_limit);
     });
@@ -1126,8 +1346,8 @@
     const on = function (key) { return !liveMode || state[key] !== false; };
     let body = '<section class="subpage"><p class="lead">' + t.online + "/" + t.all + " 台在线。</p>";
     body += '<section class="kpi">' +
-      "<article><div class='lbl'>月均成本</div><div class='val'>¥" + monthCost.toFixed(0) + "</div><div class='sub'>按续费折算</div></article>" +
-      "<article><div class='lbl'>年化预算</div><div class='val'>¥" + (monthCost * 12).toFixed(0) + "</div><div class='sub'>官方汇率</div></article>" +
+      "<article><div class='lbl'>月均成本</div><div class='val'>¥" + monthCostVal.toFixed(0) + "</div><div class='sub'>按续费折算</div></article>" +
+      "<article><div class='lbl'>年化预算</div><div class='val'>¥" + (monthCostVal * 12).toFixed(0) + "</div><div class='sub'>官方汇率</div></article>" +
       "<article><div class='lbl'>周期用量</div><div class='val'>" + fmtBytes(t.used, 1) + "</div><div class='sub'>限额 " + fmtBytes(t.limit, 2) + "</div></article>" +
       "<article><div class='lbl'>有限额</div><div class='val'>" + servers.filter(function (s) { return s.traffic_limit; }).length + "</div><div class='sub'>台服务器</div></article></section>";
     if (on("show_traffic_7d") || on("show_traffic_quota")) {
@@ -1236,6 +1456,17 @@
       }
       return;
     }
+    const sortBtn = ev.target.closest("[data-sort]");
+    if (sortBtn) {
+      const k = sortBtn.getAttribute("data-sort");
+      if (sortKey === k) sortDir = -sortDir;
+      else {
+        sortKey = k;
+        sortDir = 1;
+      }
+      render();
+      return;
+    }
     const viewBtn = ev.target.closest("[data-view]");
     if (viewBtn) {
       go(viewHash(viewBtn.getAttribute("data-view"), null, null, "nodes"));
@@ -1312,6 +1543,17 @@
   document.getElementById("win-back").addEventListener("click", closeWindow);
   overlay.addEventListener("click", onWindowClick);
   main.addEventListener("click", onMainClick);
+  main.addEventListener("input", function (ev) {
+    if (!ev.target.closest("[data-find]")) return;
+    findQ = ev.target.value;
+    const pos = ev.target.selectionStart;
+    render();
+    const el = main.querySelector("[data-find]");
+    if (el) {
+      el.focus();
+      try { el.setSelectionRange(pos, pos); } catch (e) {}
+    }
+  });
   main.addEventListener("pointerdown", onGlobeDown);
   main.addEventListener("pointermove", onGlobeMove);
   main.addEventListener("pointerup", onGlobeUp);
