@@ -15,7 +15,7 @@
   let lastView = "list";
   let fastestLineI = -1;
   let fastestLandI = -1;
-  let sortKey = "ms";
+  let sortKey = "name";
   let sortDir = 1;
   let findQ = "";
   let home = "nodes";
