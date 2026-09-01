@@ -13,7 +13,8 @@
   let targetKey = "";
   let lastFocus = null;
   let lastView = "list";
-  let fastestI = -1;
+  let fastestLineI = -1;
+  let fastestLandI = -1;
   let sortKey = "ms";
   let sortDir = 1;
   let findQ = "";
@@ -130,21 +131,21 @@
     return Math.max(0, Math.min(100, (used / total) * 100));
   }
 
-  function primaryPing(server) {
-    return ProbeAdapt.primaryPing(server);
+  function primaryPing(server, role) {
+    return ProbeAdapt.primaryPing(server, role);
+  }
+
+  function roleOf(server) {
+    return ProbeAdapt.serverRole(server);
   }
 
   function ccText(server) {
     return (server && server.region_country) || "—";
   }
 
-  function placeText(server) {
-    return (server && server.region_label) || "";
-  }
-
-  function pingMs(server) {
-    const p = primaryPing(server);
-    return p ? p.current_ms : -1;
+  function pingMs(server, role) {
+    const p = primaryPing(server, role);
+    return p && p.current_ms >= 0 ? p.current_ms : -1;
   }
 
   function pingLoss(server) {
@@ -221,21 +222,30 @@
   }
 
   function refreshMarks() {
-    fastestI = -1;
-    let best = Infinity;
+    fastestLineI = -1;
+    fastestLandI = -1;
+    let bestLine = Infinity;
+    let bestLand = Infinity;
     (state.servers || []).forEach(function (s, i) {
       if (!s.online) return;
-      const ms = pingMs(s);
-      if (ms >= 0 && ms < best) {
-        best = ms;
-        fastestI = i;
+      const role = roleOf(s);
+      const ms = pingMs(s, role === "mixed" ? "line" : role);
+      if (ms < 0) return;
+      if (role === "land") {
+        if (ms < bestLand) { bestLand = ms; fastestLandI = i; }
+      } else if (role === "line" || role === "mixed") {
+        if (ms < bestLine) { bestLine = ms; fastestLineI = i; }
       }
     });
   }
 
   function nodeTags(server, i) {
     let html = "";
-    if (i === fastestI && server.online) html += '<span class="mark mark-fast">最快</span>';
+    const role = roleOf(server);
+    const label = ProbeAdapt.roleLabel(role);
+    if (label) html += '<span class="mark">' + label + "</span>";
+    if (role === "land" && i === fastestLandI && server.online) html += '<span class="mark mark-fast">最快</span>';
+    if ((role === "line" || role === "mixed") && i === fastestLineI && server.online) html += '<span class="mark mark-fast">最快</span>';
     const d = daysUntil(server.expires_at);
     if (d != null && d <= 14) html += '<span class="mark mark-due">' + (d < 0 ? "到期" : d + "天") + "</span>";
     return html;
@@ -475,7 +485,7 @@
       '<button class="row' + cardTone(server) + '" data-index="' + i + '" type="button">' +
         '<span class="cc">' + ccText(server) + "</span>" +
         '<span class="name">' + (server.name || "未命名") + nodeTags(server, i) + "</span>" +
-        '<span class="status">' + (server.online ? "在线" : "离线") + (placeText(server) ? " · " + placeText(server) : "") + "</span>" +
+        '<span class="status">' + (server.online ? "在线" : "离线") + "</span>" +
         '<span class="speeds">↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></span>" +
         pingReadout(server) +
         sparkOf(server, false, true) +
@@ -513,7 +523,7 @@
             '<span class="name">' + (server.name || "未命名") + "</span>" +
             nodeTags(server, i) +
             '<span class="dot' + (server.online ? "" : " is-off") + '"></span>' +
-            '<span class="status">' + (server.online ? "在线" : "离线") + (placeText(server) ? " · " + placeText(server) : "") + "</span>" +
+            '<span class="status">' + (server.online ? "在线" : "离线") + (ProbeAdapt.roleLabel(roleOf(server)) ? " · " + ProbeAdapt.roleLabel(roleOf(server)) : "") + "</span>" +
           "</div>" +
           '<span class="more">打开窗口 →</span>' +
         "</div>" +
@@ -576,7 +586,7 @@
     const t = totals();
     const regions = {};
     (state.servers || []).forEach(function (s) {
-      const k = s.region_label || s.region_country || "未知";
+      const k = s.region_country || "—";
       regions[k] = (regions[k] || 0) + 1;
     });
     const down = (state.servers || []).reduce(function (a, s) { return a + (s.download_speed || 0); }, 0);
@@ -749,7 +759,7 @@
       '<header class="hero">' +
         "<div>" +
           '<div class="hero-sub">' +
-            (s.online ? "在线" : "离线") + (placeText(s) ? " · " + placeText(s) : "") +
+            (s.online ? "在线" : "离线") + (ProbeAdapt.roleLabel(roleOf(s)) ? " · " + ProbeAdapt.roleLabel(roleOf(s)) : "") + (s.region_country ? " · " + s.region_country : "") +
             (s.provider_name ? " · " + s.provider_name : "") +
             " · 在线 " + fmtDays(s.uptime) +
           "</div>" +
@@ -882,7 +892,7 @@
       '<article class="sheet">' +
         '<header class="sheet-head">' +
           '<div>' +
-            '<div class="hero-sub">' + (s.online ? "在线" : "离线") + (placeText(s) ? " · " + placeText(s) : "") + (s.provider_name ? " · " + s.provider_name : "") + " · " + fmtDays(s.uptime) + "</div>" +
+            '<div class="hero-sub">' + (s.online ? "在线" : "离线") + (ProbeAdapt.roleLabel(roleOf(s)) ? " · " + ProbeAdapt.roleLabel(roleOf(s)) : "") + (s.region_country ? " · " + s.region_country : "") + (s.provider_name ? " · " + s.provider_name : "") + " · " + fmtDays(s.uptime) + "</div>" +
           "</div>" +
           '<div class="ms-xl">' + (ctx.ping && ctx.ping.current_ms >= 0 ? ctx.ping.current_ms : "—") + "<small>MS</small></div>" +
         "</header>" +
@@ -958,7 +968,7 @@
       return;
     }
     winTitle.textContent = s.name || "未命名";
-    winKicker.textContent = ccText(s) + " / " + (placeText(s) || "DETAIL");
+    winKicker.textContent = ccText(s) + " / " + (ProbeAdapt.roleLabel(roleOf(s)) || "DETAIL");
     winBody.innerHTML = pageHTML(index);
     overlay.hidden = false;
     document.body.classList.add("is-locked");
@@ -1199,23 +1209,30 @@
 
   function globePanel() {
     if (!showGlobe) return "";
-    const regions = {};
-    (state.servers || []).forEach(function (s) {
-      const k = (s.region_label || s.region_country || "未知");
-      regions[k] = (regions[k] || 0) + 1;
-    });
-    const side = Object.keys(regions).map(function (k) {
-      let best = null;
-      let cc = "";
+    function sideGroup(role, title) {
+      const groups = {};
       (state.servers || []).forEach(function (s) {
-        const label = s.region_label || s.region_country || "未知";
-        if (label !== k) return;
-        if (!cc) cc = s.region_country || "";
-        if (!best || (pingMs(s) >= 0 && (pingMs(best) < 0 || pingMs(s) < pingMs(best)))) best = s;
+        const r = roleOf(s);
+        if (role === "line" && r !== "line" && r !== "mixed") return;
+        if (role === "land" && r !== "land" && r !== "mixed") return;
+        const k = s.region_country || "—";
+        (groups[k] = groups[k] || []).push(s);
       });
-      const ms = best ? pingMs(best) : -1;
-      return '<button type="button" class="reg" data-aim="' + cc + '"><span>' + k + '</span><b class="is-' + (best ? pingBand(best) : "ok") + '">' + (ms < 0 ? "—" : ms + "ms") + "</b></button>";
-    }).join("");
+      const keys = Object.keys(groups).sort();
+      if (!keys.length) return "";
+      const rows = keys.map(function (k) {
+        let best = null;
+        groups[k].forEach(function (s) {
+          const ms = pingMs(s, role);
+          const bestMs = best ? pingMs(best, role) : -1;
+          if (!best || (ms >= 0 && (bestMs < 0 || ms < bestMs))) best = s;
+        });
+        const ms = best ? pingMs(best, role) : -1;
+        const fake = best ? { online: best.online, ping: [primaryPing(best, role)].filter(Boolean) } : null;
+        return '<button type="button" class="reg" data-aim="' + (k === "—" ? "" : k) + '"><span>' + k + '</span><b class="is-' + (fake ? pingBand(fake) : "ok") + '">' + (ms < 0 ? "—" : ms + "ms") + "</b></button>";
+      }).join("");
+      return '<div class="atlas-group"><div class="lbl">' + title + "</div>" + rows + "</div>";
+    }
     return (
       '<section class="home-globe" aria-label="节点地球">' +
         '<div class="atlas">' +
@@ -1223,7 +1240,7 @@
             globeMarkup() +
           "</svg>" +
         "</div>" +
-        '<aside class="atlas-side"><div class="lbl">地区</div>' + side + "</aside>" +
+        '<aside class="atlas-side">' + sideGroup("line", "线路") + sideGroup("land", "落地") + "</aside>" +
       "</section>"
     );
   }

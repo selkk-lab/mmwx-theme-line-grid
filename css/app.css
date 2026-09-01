@@ -1823,7 +1823,13 @@ html[data-theme="light"] .overlay {
   padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
+}
+
+.atlas-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .atlas-side h3 {

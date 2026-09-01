@@ -50,31 +50,6 @@
     tokyo: "东京", "tung chung": "东涌", "new york": "纽约", "san jose": "圣何塞",
   };
 
-  const TOKEN_CC = {
-    AE: "AE", AU: "AU", BJ: "CN", CA: "CA", CN: "CN", DE: "DE", FRA: "DE",
-    FR: "FR", GB: "GB", GZ: "CN", HINET: "TW", HK: "HK", ICN: "KR",
-    JP: "JP", KHH: "TW", KIX: "JP", KR: "KR", LA: "US", MO: "MO",
-    NL: "NL", NRT: "JP", NY: "US", OSA: "JP", SEEDNET: "TW", SG: "SG",
-    SH: "CN", SYD: "AU", SZ: "CN", TKY: "JP", TPE: "TW", TW: "TW",
-    UK: "GB", US: "US", AMS: "NL",
-  };
-
-  const NAME_HINTS = [
-    [/香港|hong\s*kong/i, "HK"],
-    [/台湾|台灣|taipei|taichung|hinet|seednet/i, "TW"],
-    [/日本|tokyo|osaka/i, "JP"],
-    [/新加坡|singapore/i, "SG"],
-    [/韩国|韓國|seoul/i, "KR"],
-    [/美国|美國|los\s*angeles/i, "US"],
-    [/荷兰|荷蘭|amsterdam/i, "NL"],
-    [/德国|德國|frankfurt/i, "DE"],
-    [/澳洲|澳大利亚|sydney/i, "AU"],
-    [/英国|英國|london/i, "GB"],
-    [/法国|法國/i, "FR"],
-    [/澳门|澳門/i, "MO"],
-    [/北京|上海|深圳|广州|廣州/i, "CN"],
-  ];
-
   function upperIso(value) {
     const text = String(value || "").trim().toUpperCase();
     return /^[A-Z]{2}$/.test(text) ? text : "";
@@ -100,33 +75,12 @@
     return String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65);
   }
 
-  function tokens(name) {
-    return String(name || "")
-      .toUpperCase()
-      .split(/[^A-Z0-9\u4E00-\u9FFF]+/)
-      .filter(Boolean);
-  }
-
   function inferCountry(server) {
     if (!server) return "";
     const fromField = upperIso(server.region_country);
     if (fromField) return fromField;
     const fromFlag = flagToIso(server.region);
     if (fromFlag) return fromFlag;
-    const fromPlace = flagToIso(server.region_name) || flagToIso(server.region_city);
-    if (fromPlace) return fromPlace;
-    const name = server.name || "";
-    const bits = tokens(name);
-    for (let i = 0; i < bits.length; i += 1) {
-      if (TOKEN_CC[bits[i]]) return TOKEN_CC[bits[i]];
-    }
-    for (let i = 0; i < NAME_HINTS.length; i += 1) {
-      if (NAME_HINTS[i][0].test(name)) return NAME_HINTS[i][1];
-    }
-    const blob = [server.region_name, server.region_city].filter(Boolean).join(" ");
-    for (let i = 0; i < NAME_HINTS.length; i += 1) {
-      if (blob && NAME_HINTS[i][0].test(blob)) return NAME_HINTS[i][1];
-    }
     return "";
   }
 
@@ -157,10 +111,7 @@
     if (!server) return null;
     const city = String(server.region_city || "").trim().toLowerCase();
     if (city && CITY_LL[city]) return CITY_LL[city];
-    const area = String(server.region_name || "").trim().toLowerCase();
-    if (area && CITY_LL[area]) return CITY_LL[area];
     const cc = inferCountry(server);
-    if (cc === "CN" && /\bBJ\b|北京/.test(server.name || "")) return CITY_LL.beijing;
     if (cc && COUNTRY_LL[cc]) return COUNTRY_LL[cc];
     return null;
   }
@@ -173,30 +124,47 @@
     return p && Number.isFinite(Number(p.current_ms)) && Number(p.current_ms) >= 0;
   }
 
-  function pingScore(p) {
+  function isLinePing(p) {
+    if (!p) return false;
     const isp = String(p.isp || "").toLowerCase();
     const key = String(p.key || "").toLowerCase();
-    if (isp === "unicom" || isp === "telecom" || isp === "mobile") return 4;
-    if (/^(ln-|cu-|ct-|cm-|cn-)/.test(key)) return 4;
-    if (isp && isp !== "intl" && isp !== "web") return 3;
-    if (isp === "intl" || key.indexOf("intl-") === 0) return 1;
-    return 2;
+    if (isp === "unicom" || isp === "telecom" || isp === "mobile") return true;
+    return /^(ln-|cu-|ct-|cm-|cn-)/.test(key);
   }
 
-  function primaryPing(server) {
+  function isLandPing(p) {
+    if (!p) return false;
+    const isp = String(p.isp || "").toLowerCase();
+    const key = String(p.key || "").toLowerCase();
+    return isp === "intl" || key.indexOf("intl-") === 0;
+  }
+
+  function serverRole(server) {
     const list = pingList(server);
-    const valid = list.filter(pingOk);
-    if (!valid.length) return list[0] || null;
-    let best = valid[0];
-    let bestScore = pingScore(best);
-    for (let i = 1; i < valid.length; i += 1) {
-      const s = pingScore(valid[i]);
-      if (s > bestScore) {
-        best = valid[i];
-        bestScore = s;
-      }
-    }
-    return best;
+    const line = list.some(isLinePing);
+    const land = list.some(isLandPing);
+    if (line && land) return "mixed";
+    if (line) return "line";
+    if (land) return "land";
+    return "";
+  }
+
+  function roleLabel(role) {
+    if (role === "line" || role === "mixed") return "线路";
+    if (role === "land") return "落地";
+    return "";
+  }
+
+  function primaryPing(server, roleHint) {
+    const list = pingList(server);
+    const role = roleHint || serverRole(server);
+    let pool = list;
+    if (role === "line" || role === "mixed") pool = list.filter(isLinePing);
+    else if (role === "land") pool = list.filter(isLandPing);
+    const valid = pool.filter(pingOk);
+    if (valid.length) return valid[0];
+    const any = list.filter(pingOk);
+    return any[0] || list[0] || null;
   }
 
   function meanMs(list) {
@@ -279,6 +247,10 @@
     inferCountry: inferCountry,
     regionLabel: regionLabel,
     coords: coords,
+    isLinePing: isLinePing,
+    isLandPing: isLandPing,
+    serverRole: serverRole,
+    roleLabel: roleLabel,
     primaryPing: primaryPing,
     meanMs: meanMs,
     meanLoss: meanLoss,
