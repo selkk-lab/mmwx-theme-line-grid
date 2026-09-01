@@ -563,7 +563,7 @@ html[data-theme="light"][data-fx-grain="1"] .fx-grain { opacity: var(--fx-grain-
 
 .head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }
@@ -577,10 +577,18 @@ html[data-theme="light"][data-fx-grain="1"] .fx-grain { opacity: var(--fx-grain-
 }
 
 .name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   font-size: 19px;
   font-weight: 560;
   letter-spacing: -0.03em;
   white-space: nowrap;
+}
+
+.name-t {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -885,7 +893,7 @@ html[data-theme="light"][data-fx-grain="1"] .fx-grain { opacity: var(--fx-grain-
   position: relative;
   width: 100%;
   display: grid;
-  grid-template-columns: 40px 156px 44px 168px 86px minmax(110px, 1fr) 44px 44px 44px 96px 48px;
+  grid-template-columns: 40px 188px 168px 86px minmax(110px, 1fr) 44px 44px 44px 96px 48px;
   gap: 12px;
   align-items: center;
   padding: 15px 18px;
@@ -947,7 +955,7 @@ html[data-theme="light"][data-fx-grain="1"] .fx-grain { opacity: var(--fx-grain-
 
 .row-h::before { display: none; }
 
-.row .name { font-size: 15px; white-space: nowrap; }
+.row .name { font-size: 15px; }
 
 .mark {
   display: inline-block;
@@ -1310,13 +1318,12 @@ html[data-theme="light"][data-fx-grain="1"] .fx-grain { opacity: var(--fx-grain-
   .row {
     grid-template-columns: 40px 1fr auto;
     grid-template-areas:
-      "cc name st"
+      "cc name name"
       "cc speeds speeds"
       "spark spark ms";
   }
   .row .cc { grid-area: cc; }
   .row .name { grid-area: name; }
-  .row .status { grid-area: st; margin: 0; }
   .row .speeds { grid-area: speeds; }
   .row .spark-wrap { grid-area: spark; }
   .row .ms,

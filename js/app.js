@@ -143,6 +143,21 @@
     return (server && server.region_country) || "—";
   }
 
+  function lamp(server) {
+    const on = !!(server && server.online);
+    return '<span class="dot' + (on ? "" : " is-off") + '" title="' + (on ? "在线" : "离线") + '" aria-label="' + (on ? "在线" : "离线") + '"></span>';
+  }
+
+  function nameCell(server, i) {
+    return (
+      '<span class="name">' +
+        lamp(server) +
+        '<span class="name-t">' + (server.name || "未命名") + "</span>" +
+        nodeTags(server, i) +
+      "</span>"
+    );
+  }
+
   function pingMs(server, role) {
     const p = primaryPing(server, role);
     return p && p.current_ms >= 0 ? p.current_ms : -1;
@@ -459,10 +474,7 @@
           '<div class="card-face">' +
             '<div class="head">' +
               '<span class="cc">' + ccText(server) + "</span>" +
-              '<span class="name">' + (server.name || "未命名") + "</span>" +
-              nodeTags(server, i) +
-              '<span class="dot' + (server.online ? "" : " is-off") + '"></span>' +
-              '<span class="status">' + (server.online ? "在线" : "离线") + "</span>" +
+              nameCell(server, i) +
             "</div>" +
             '<div class="speeds">' +
               '<span>实时网速　↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></span>" +
@@ -484,8 +496,7 @@
     return (
       '<button class="row' + cardTone(server) + '" data-index="' + i + '" type="button">' +
         '<span class="cc">' + ccText(server) + "</span>" +
-        '<span class="name">' + (server.name || "未命名") + nodeTags(server, i) + "</span>" +
-        '<span class="status">' + (server.online ? "在线" : "离线") + "</span>" +
+        nameCell(server, i) +
         '<span class="speeds">↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></span>" +
         pingReadout(server) +
         sparkOf(server, false, true) +
@@ -501,7 +512,7 @@
   function listHead() {
     return (
       '<div class="row row-h" aria-hidden="true">' +
-        sortHead("cc", "地区") + sortHead("name", "名称") + "<span>状态</span>" + sortHead("up", "实时网速") +
+        sortHead("cc", "地区") + sortHead("name", "名称") + sortHead("up", "实时网速") +
         sortHead("ms", "延迟") + "<span>曲线</span>" +
         sortHead("cpu", "CPU") + sortHead("mem", "内存") + sortHead("disk", "硬盘") +
         sortHead("traffic", "流量") + sortHead("days", "在线") +
@@ -520,10 +531,7 @@
         '<div class="slab-top">' +
           '<div class="head">' +
             '<span class="cc">' + ccText(server) + "</span>" +
-            '<span class="name">' + (server.name || "未命名") + "</span>" +
-            nodeTags(server, i) +
-            '<span class="dot' + (server.online ? "" : " is-off") + '"></span>' +
-            '<span class="status">' + (server.online ? "在线" : "离线") + (ProbeAdapt.roleLabel(roleOf(server)) ? " · " + ProbeAdapt.roleLabel(roleOf(server)) : "") + "</span>" +
+            nameCell(server, i) +
           "</div>" +
           '<span class="more">打开窗口 →</span>' +
         "</div>" +
