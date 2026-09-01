@@ -8,7 +8,14 @@
   const winTitle = document.getElementById("win-title");
   const winKicker = document.getElementById("win-kicker");
 
-  let state = ProbeAdapt.normalizePayload(ProbeDemo.snapshot());
+  function forcedDemo() {
+    const q = new URLSearchParams(location.search);
+    return q.get("demo") === "1" || location.protocol === "file:";
+  }
+
+  let state = forcedDemo()
+    ? ProbeAdapt.normalizePayload(ProbeDemo.snapshot())
+    : { enabled: true, servers: [], title: "" };
   let range = "1h";
   let targetKey = "";
   let lastFocus = null;
@@ -1424,6 +1431,12 @@
     const demo = params.get("state");
     renderChrome(r);
 
+    if (!liveMode && !forcedDemo()) {
+      main.innerHTML = "";
+      foot.innerHTML = "";
+      hideWindow();
+      return;
+    }
     if (demo === "error" || state.enabled === false) {
       empty("探针未开启", "当前没有可展示的公开探针数据。");
       foot.innerHTML = "";
@@ -1757,8 +1770,18 @@
   })();
 
   render();
+  if (forcedDemo()) return;
   ProbeAPI.fetchServers().then(function (payload) {
-    if (!payload || payload.enabled === false) return;
+    if (payload && payload.enabled === false) {
+      state = ProbeAdapt.normalizePayload(payload);
+      render();
+      return;
+    }
+    if (!payload || !payload.servers) {
+      empty("探针暂时无法访问", "接口没有返回节点数据。");
+      foot.innerHTML = "";
+      return;
+    }
     applyLive(payload);
     ProbeAPI.connectWS(applyLive);
   });
