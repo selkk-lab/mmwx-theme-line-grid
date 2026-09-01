@@ -32,6 +32,7 @@ komari-theme.json
 preview.svg
 dist/index.html
 dist/css/app.css
+dist/js/adapt.js
 dist/js/api.js
 dist/js/app.js
 dist/js/charts.js

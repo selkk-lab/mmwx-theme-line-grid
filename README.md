@@ -25,6 +25,7 @@
    ```text
    /line-grid/index.html
    /line-grid/css/app.css
+   /line-grid/js/adapt.js
    /line-grid/js/app.js
    /line-grid/js/api.js
    /line-grid/js/charts.js
