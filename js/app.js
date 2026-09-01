@@ -8,7 +8,7 @@
   const winTitle = document.getElementById("win-title");
   const winKicker = document.getElementById("win-kicker");
 
-  let state = ProbeDemo.snapshot();
+  let state = ProbeAdapt.normalizePayload(ProbeDemo.snapshot());
   let range = "1h";
   let targetKey = "";
   let lastFocus = null;
@@ -88,12 +88,6 @@
   const PAGES = ["overview", "ping", "traffic", "routes", "system"];
   const PAGE_LABEL = { overview: "Overview", ping: "Latency", traffic: "Traffic", routes: "Return", system: "System" };
   const HOMES = ["nodes", "network", "resource"];
-  const COUNTRY_LL = {
-    HK: [114.2, 22.3], JP: [139.7, 35.7], DE: [8.7, 50.1], NL: [4.9, 52.4],
-    US: [-118.2, 34.05], TW: [121.56, 25.03], AU: [151.21, -33.87], SG: [103.82, 1.35],
-    KR: [126.98, 37.57], GB: [-0.13, 51.51], FR: [2.35, 48.86], CN: [121.47, 31.23],
-  };
-
   const CARRIER = { telecom: "电信", unicom: "联通", mobile: "移动" };
   const CYCLE = { month: "月", quarter: "季", half_year: "半年", year: "年" };
 
@@ -137,7 +131,15 @@
   }
 
   function primaryPing(server) {
-    return (server.ping && server.ping[0]) || null;
+    return ProbeAdapt.primaryPing(server);
+  }
+
+  function ccText(server) {
+    return (server && server.region_country) || "—";
+  }
+
+  function placeText(server) {
+    return (server && server.region_label) || "";
   }
 
   function pingMs(server) {
@@ -147,7 +149,8 @@
 
   function pingLoss(server) {
     const p = primaryPing(server);
-    return p ? p.loss_pct : 0;
+    if (!p || p.loss_pct == null || p.loss_pct < 0) return null;
+    return p.loss_pct;
   }
 
   function pingBand(server) {
@@ -180,7 +183,15 @@
   function fmtLoss(server) {
     if (!server || !server.online) return "—";
     const l = pingLoss(server);
-    if (l == null || !isFinite(l)) return "—";
+    if (l == null || !isFinite(l) || l < 0) return "—";
+    if (l < 0.005) return "0%";
+    if (l < 1) return l.toFixed(2) + "%";
+    return l.toFixed(1) + "%";
+  }
+
+  function fmtPingLoss(ping) {
+    const l = ping ? Number(ping.loss_pct) : NaN;
+    if (!Number.isFinite(l) || l < 0) return "—";
     if (l < 0.005) return "0%";
     if (l < 1) return l.toFixed(2) + "%";
     return l.toFixed(1) + "%";
@@ -237,7 +248,7 @@
   }
 
   function dailyStats(server) {
-    const rows = server.daily_traffic || [];
+    const rows = ProbeAdapt.lastDays(server.daily_traffic, 7);
     const vals = rows.map(function (r) { return r.total; });
     if (!vals.length) return { high: 0, low: 0, avg: 0 };
     const high = Math.max.apply(null, vals);
@@ -353,7 +364,7 @@
 
   function sparkOf(server, tall, hideRead) {
     const p = primaryPing(server);
-    const vals = p && p.buckets ? p.buckets.map(function (b) { return b.ms; }) : [20, 22, 21, 24, 23];
+    const vals = p && p.buckets ? p.buckets.map(function (b) { return b.ms; }) : [];
     return (
       '<div class="spark-wrap">' +
         ProbeCharts.spark(vals, { w: tall ? 420 : 240, h: tall ? 64 : 40, color: pingColor(server), tips: pingTips(vals, 5) }) +
@@ -417,13 +428,13 @@
   }
 
   function cardCoord(server) {
-    const ll = COUNTRY_LL[server.region_country];
-    if (!ll) return (server.region_country || "——");
+    const ll = ProbeAdapt.coords(server);
+    if (!ll) return ccText(server);
     return Math.abs(ll[1]).toFixed(1) + (ll[1] >= 0 ? "N" : "S") + "  " + Math.abs(ll[0]).toFixed(1) + (ll[0] >= 0 ? "E" : "W");
   }
 
   function lookAtCountry(cc) {
-    const ll = COUNTRY_LL[cc];
+    const ll = ProbeAdapt.COUNTRY_LL[cc];
     if (!ll) return;
     globeLon = ll[0];
     globeLat = Math.max(-78, Math.min(78, ll[1]));
@@ -437,7 +448,7 @@
           '<span class="card-coord">' + cardCoord(server) + "</span>" +
           '<div class="card-face">' +
             '<div class="head">' +
-              '<span class="cc">' + (server.region_country || "") + "</span>" +
+              '<span class="cc">' + ccText(server) + "</span>" +
               '<span class="name">' + (server.name || "未命名") + "</span>" +
               nodeTags(server, i) +
               '<span class="dot' + (server.online ? "" : " is-off") + '"></span>' +
@@ -462,9 +473,9 @@
   function row(server, i) {
     return (
       '<button class="row' + cardTone(server) + '" data-index="' + i + '" type="button">' +
-        '<span class="cc">' + (server.region_country || "") + "</span>" +
+        '<span class="cc">' + ccText(server) + "</span>" +
         '<span class="name">' + (server.name || "未命名") + nodeTags(server, i) + "</span>" +
-        '<span class="status">' + (server.online ? "在线" : "离线") + "</span>" +
+        '<span class="status">' + (server.online ? "在线" : "离线") + (placeText(server) ? " · " + placeText(server) : "") + "</span>" +
         '<span class="speeds">↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></span>" +
         pingReadout(server) +
         sparkOf(server, false, true) +
@@ -498,11 +509,11 @@
       '<button class="slab" data-index="' + i + '" type="button">' +
         '<div class="slab-top">' +
           '<div class="head">' +
-            '<span class="cc">' + (server.region_country || "") + "</span>" +
+            '<span class="cc">' + ccText(server) + "</span>" +
             '<span class="name">' + (server.name || "未命名") + "</span>" +
             nodeTags(server, i) +
             '<span class="dot' + (server.online ? "" : " is-off") + '"></span>' +
-            '<span class="status">' + (server.online ? "在线" : "离线") + " · " + (server.region_city || server.region_name || "") + "</span>" +
+            '<span class="status">' + (server.online ? "在线" : "离线") + (placeText(server) ? " · " + placeText(server) : "") + "</span>" +
           "</div>" +
           '<span class="more">打开窗口 →</span>' +
         "</div>" +
@@ -565,7 +576,7 @@
     const t = totals();
     const regions = {};
     (state.servers || []).forEach(function (s) {
-      const k = s.region_name || s.region_country || "—";
+      const k = s.region_label || s.region_country || "未知";
       regions[k] = (regions[k] || 0) + 1;
     });
     const down = (state.servers || []).reduce(function (a, s) { return a + (s.download_speed || 0); }, 0);
@@ -644,7 +655,8 @@
         return ((s.name || "").toLowerCase().indexOf(q) >= 0)
           || ((s.region_country || "").toLowerCase().indexOf(q) >= 0)
           || ((s.region_city || "").toLowerCase().indexOf(q) >= 0)
-          || ((s.region_name || "").toLowerCase().indexOf(q) >= 0);
+          || ((s.region_name || "").toLowerCase().indexOf(q) >= 0)
+          || ((s.region_label || "").toLowerCase().indexOf(q) >= 0);
       });
     }
     const dir = sortDir;
@@ -716,8 +728,9 @@
   function nodeCtx(index) {
     const s = state.servers[index];
     if (!s) return null;
-    if (!targetKey && s.ping && s.ping[0]) targetKey = s.ping[0].key;
-    const ping = (s.ping || []).find(function (p) { return p.key === targetKey; }) || (s.ping || [])[0];
+    const primary = ProbeAdapt.primaryPing(s);
+    if (!targetKey && primary && primary.key) targetKey = primary.key;
+    const ping = (s.ping || []).find(function (p) { return p.key === targetKey; }) || primary;
     const cacheKey = index + ":" + range + ":" + (targetKey || "avg");
     const cached = seriesCache[cacheKey];
     let sparkVals = [];
@@ -727,7 +740,7 @@
       const hist = ProbeDemo.pingSeries(s, range, ping.key);
       sparkVals = (hist.series || []).map(function (p) { return p.value; });
     }
-    return { s: s, ping: ping, sparkVals: sparkVals, st: dailyStats(s), last7: (s.daily_traffic || []).slice(-7) };
+    return { s: s, ping: ping, sparkVals: sparkVals, st: dailyStats(s), last7: ProbeAdapt.lastDays(s.daily_traffic, 7) };
   }
 
   function heroLine(s, ping) {
@@ -736,7 +749,7 @@
       '<header class="hero">' +
         "<div>" +
           '<div class="hero-sub">' +
-            (s.online ? "在线" : "离线") + " · " + (s.region_name || s.region_city || "") +
+            (s.online ? "在线" : "离线") + (placeText(s) ? " · " + placeText(s) : "") +
             (s.provider_name ? " · " + s.provider_name : "") +
             " · 在线 " + fmtDays(s.uptime) +
           "</div>" +
@@ -759,10 +772,10 @@
           '<article><div class="lbl">CPU</div><div class="val">' + Math.round(s.cpu_pct || 0) + '%</div><div class="sub">负载 ' + ((s.loadavg || "—").toString().trim().split(/\s+/).join(" · ")) + "</div></article>" +
           '<article><div class="lbl">内存</div><div class="val">' + Math.round(pct(s.mem_used, s.mem_total)) + '%</div><div class="sub">' + fmtBytes(s.mem_used, 1) + " / " + fmtBytes(s.mem_total, 0) + "</div></article>" +
           '<article><div class="lbl">硬盘</div><div class="val">' + Math.round(pct(s.disk_used, s.disk_total)) + '%</div><div class="sub">' + fmtBytes(s.disk_used, 0) + " / " + fmtBytes(s.disk_total, 0) + "</div></article>" +
-          '<article><div class="lbl">周期流量</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">限额 ' + fmtBytes(s.traffic_limit, 2) + "</div></article>" +
+          '<article><div class="lbl">周期流量</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">' + (s.traffic_limit ? "限额 " + fmtBytes(s.traffic_limit, 2) : "无限额") + "</div></article>" +
         "</section>" +
         '<section class="panels" style="min-height:0;height:100%">' +
-          '<div class="chart-fill"><div class="panel-h"><h3>延迟</h3><span class="hero-sub">丢包 ' + (ctx.ping ? ctx.ping.loss_pct.toFixed(2) : "0.00") + "%</span></div>" +
+          '<div class="chart-fill"><div class="panel-h"><h3>延迟</h3><span class="hero-sub">丢包 ' + fmtPingLoss(ctx.ping) + "</span></div>" +
             ProbeCharts.spark(ctx.sparkVals, { w: 640, h: 180, color: pingColor(s), tips: pingTips(ctx.sparkVals, 5) }) +
           "</div>" +
           '<div class="chart-fill"><div class="panel-h"><h3>近 7 日</h3><span class="hero-sub">均 ' + fmtBytes(ctx.st.avg, 1) + "</span></div>" +
@@ -778,7 +791,7 @@
     return (
       '<article class="page page-ping">' +
         '<div class="panel-h">' +
-          "<div><h3 style='margin:0'>延迟 · 丢包 " + (ctx.ping ? ctx.ping.loss_pct.toFixed(2) : "0.00") + "%</h3></div>" +
+          "<div><h3 style='margin:0'>延迟 · 丢包 " + fmtPingLoss(ctx.ping) + "</h3></div>" +
           '<div class="seg">' +
             ["1h", "6h", "24h"].map(function (k) {
               return '<button type="button" data-range="' + k + '" class="' + (range === k ? "is-on" : "") + '">' + k + "</button>";
@@ -789,7 +802,7 @@
           '<div class="targets">' +
             (s.ping || []).map(function (p) {
               const fake = { online: s.online, ping: [p] };
-              return '<button type="button" class="chip is-' + pingBand(fake) + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " · <b>" + p.current_ms + "ms</b> <i>" + fmtLoss(fake) + "</i></button>";
+              return '<button type="button" class="chip is-' + pingBand(fake) + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " · <b>" + (p.current_ms >= 0 ? p.current_ms + "ms" : "—") + "</b> <i>" + fmtLoss(fake) + "</i></button>";
             }).join("") +
           "</div>" +
           ProbeCharts.spark(ctx.sparkVals, { w: 960, h: 260, color: pingColor(s), tips: pingTips(ctx.sparkVals, range === "24h" ? 30 : range === "6h" ? 10 : 5) }) +
@@ -805,7 +818,7 @@
       '<article class="page page-traffic">' +
         '<div style="margin:0 0 16px">' + quotaBar(s) + "</div>" +
         '<section class="kpi">' +
-          '<article><div class="lbl">已用</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">限额 ' + fmtBytes(s.traffic_limit, 2) + "</div></article>" +
+          '<article><div class="lbl">已用</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">' + (s.traffic_limit ? "限额 " + fmtBytes(s.traffic_limit, 2) : "无限额") + "</div></article>" +
           '<article><div class="lbl">上行</div><div class="val">' + fmtBytes(s.traffic_used_up, 1) + '</div><div class="sub">本周期</div></article>' +
           '<article><div class="lbl">下行</div><div class="val">' + fmtBytes(s.traffic_used_down, 1) + '</div><div class="sub">本周期</div></article>' +
           '<article><div class="lbl">最高日</div><div class="val">' + fmtBytes(ctx.st.high, 1) + '</div><div class="sub">最低 ' + fmtBytes(ctx.st.low, 1) + "</div></article>" +
@@ -869,9 +882,9 @@
       '<article class="sheet">' +
         '<header class="sheet-head">' +
           '<div>' +
-            '<div class="hero-sub">' + (s.online ? "在线" : "离线") + " · " + (s.region_name || "") + (s.provider_name ? " · " + s.provider_name : "") + " · " + fmtDays(s.uptime) + "</div>" +
+            '<div class="hero-sub">' + (s.online ? "在线" : "离线") + (placeText(s) ? " · " + placeText(s) : "") + (s.provider_name ? " · " + s.provider_name : "") + " · " + fmtDays(s.uptime) + "</div>" +
           "</div>" +
-          '<div class="ms-xl">' + (ctx.ping ? ctx.ping.current_ms : "—") + "<small>MS</small></div>" +
+          '<div class="ms-xl">' + (ctx.ping && ctx.ping.current_ms >= 0 ? ctx.ping.current_ms : "—") + "<small>MS</small></div>" +
         "</header>" +
         ProbeCharts.wave({ w: 960, h: 36 }) +
         '<section class="kpi">' +
@@ -879,7 +892,7 @@
           '<article><div class="lbl">CPU</div><div class="val">' + Math.round(s.cpu_pct || 0) + '%</div><div class="sub">' + ((s.loadavg || "—").toString().trim().split(/\s+/).join(" · ")) + "</div></article>" +
           '<article><div class="lbl">内存</div><div class="val">' + Math.round(pct(s.mem_used, s.mem_total)) + '%</div><div class="sub">' + fmtBytes(s.mem_used, 1) + " / " + fmtBytes(s.mem_total, 0) + "</div></article>" +
           '<article><div class="lbl">硬盘</div><div class="val">' + Math.round(pct(s.disk_used, s.disk_total)) + '%</div><div class="sub">' + fmtBytes(s.disk_used, 0) + " / " + fmtBytes(s.disk_total, 0) + "</div></article>" +
-          '<article><div class="lbl">流量</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">' + fmtBytes(s.traffic_limit, 2) + " · 丢包 " + (ctx.ping ? ctx.ping.loss_pct.toFixed(2) : "0") + "%</div></article>" +
+          '<article><div class="lbl">流量</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">' + (s.traffic_limit ? fmtBytes(s.traffic_limit, 2) : "无限额") + " · 丢包 " + fmtPingLoss(ctx.ping) + "</div></article>" +
         "</section>" +
         '<section class="sheet-mid">' +
           '<div class="panel tight">' +
@@ -890,7 +903,7 @@
             "</div>" +
             '<div class="targets">' +
               (s.ping || []).map(function (p) {
-                return '<button type="button" class="chip' + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " " + p.current_ms + "ms</button>";
+                return '<button type="button" class="chip' + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " " + (p.current_ms >= 0 ? p.current_ms + "ms" : "—") + "</button>";
               }).join("") +
             "</div>" +
             ProbeCharts.spark(ctx.sparkVals, { w: 520, h: 88, color: cssVar("--ink", "#d5d0c4"), tips: pingTips(ctx.sparkVals, range === "24h" ? 30 : range === "6h" ? 10 : 5) }) +
@@ -945,7 +958,7 @@
       return;
     }
     winTitle.textContent = s.name || "未命名";
-    winKicker.textContent = (s.region_country || "NODE") + " / " + (s.region_city || s.region_name || "DETAIL");
+    winKicker.textContent = ccText(s) + " / " + (placeText(s) || "DETAIL");
     winBody.innerHTML = pageHTML(index);
     overlay.hidden = false;
     document.body.classList.add("is-locked");
@@ -974,10 +987,11 @@
   function layoutGlobeLabels(cx, ortho) {
     const items = [];
     (state.servers || []).forEach(function (s, i) {
-      const ll = COUNTRY_LL[s.region_country] || [80, 30];
+      const ll = ProbeAdapt.coords(s);
+      if (!ll) return;
       const p = ortho(ll[0], ll[1]);
       if (!p) return;
-      const label = (s.region_country || "") + " · " + s.name;
+      const label = ccText(s) + " · " + s.name;
       items.push({ i: i, s: s, px: p.x, py: p.y, label: label, w: labelWidth(label) });
     });
 
@@ -1187,15 +1201,16 @@
     if (!showGlobe) return "";
     const regions = {};
     (state.servers || []).forEach(function (s) {
-      const k = (s.region_country || "") + " · " + (s.region_city || s.region_name || "");
+      const k = (s.region_label || s.region_country || "未知");
       regions[k] = (regions[k] || 0) + 1;
     });
     const side = Object.keys(regions).map(function (k) {
-      const cc = k.split(" · ")[0];
       let best = null;
+      let cc = "";
       (state.servers || []).forEach(function (s) {
-        const label = (s.region_country || "") + " · " + (s.region_city || s.region_name || "");
+        const label = s.region_label || s.region_country || "未知";
         if (label !== k) return;
+        if (!cc) cc = s.region_country || "";
         if (!best || (pingMs(s) >= 0 && (pingMs(best) < 0 || pingMs(s) < pingMs(best)))) best = s;
       });
       const ms = best ? pingMs(best) : -1;
@@ -1273,9 +1288,9 @@
     const s = servers[netIndex];
     const targets = s.ping || [];
     const chosen = netTarget === "all" ? null : targets.find(function (p) { return p.key === netTarget; });
-    const avgMs = chosen ? chosen.current_ms : Math.round(targets.reduce(function (a, p) { return a + p.current_ms; }, 0) / Math.max(1, targets.length));
-    const avgLoss = chosen ? chosen.loss_pct : targets.reduce(function (a, p) { return a + p.loss_pct; }, 0) / Math.max(1, targets.length);
-    const sparkSrc = chosen || targets[0];
+    const avgMs = chosen ? (chosen.current_ms >= 0 ? chosen.current_ms : -1) : ProbeAdapt.meanMs(targets);
+    const avgLoss = chosen ? (chosen.loss_pct >= 0 ? chosen.loss_pct : 0) : ProbeAdapt.meanLoss(targets);
+    const sparkSrc = chosen || ProbeAdapt.primaryPing(s) || targets[0];
     const cacheKey = netIndex + ":" + range + ":" + (netTarget === "all" ? "avg" : netTarget);
     let vals = seriesCache[cacheKey] || [];
     if (!vals.length && range === "1h" && sparkSrc && sparkSrc.buckets) vals = sparkSrc.buckets.map(function (b) { return b.ms; });
@@ -1292,8 +1307,8 @@
           }).join("") +
         "</div>" +
         '<section class="kpi">' +
-          "<article><div class='lbl'>平均延迟</div><div class='val'>" + avgMs + " ms</div><div class='sub'>" + s.name + "</div></article>" +
-          "<article><div class='lbl'>平均丢包</div><div class='val'>" + avgLoss.toFixed(2) + "%</div><div class='sub'>所选目标</div></article>" +
+          "<article><div class='lbl'>平均延迟</div><div class='val'>" + (avgMs < 0 ? "—" : avgMs + " ms") + "</div><div class='sub'>" + s.name + "</div></article>" +
+          "<article><div class='lbl'>平均丢包</div><div class='val'>" + (avgMs < 0 ? "—" : avgLoss.toFixed(2) + "%") + "</div><div class='sub'>所选目标</div></article>" +
           "<article><div class='lbl'>时间范围</div><div class='val'>" + range + "</div><div class='sub'>1h / 6h / 24h</div></article>" +
           "<article><div class='lbl'>探测目标</div><div class='val'>" + targets.length + "</div><div class='sub'>当前服务器配置</div></article>" +
         "</section>" +
@@ -1301,7 +1316,7 @@
           '<div class="pick">' +
             '<button type="button" class="chip' + (netTarget === "all" ? " is-on" : "") + '" data-nett="all">全部平均</button>' +
             targets.map(function (p) {
-              return '<button type="button" class="chip' + (netTarget === p.key ? " is-on" : "") + '" data-nett="' + p.key + '">' + p.label + " · " + p.isp + "</button>";
+              return '<button type="button" class="chip' + (netTarget === p.key ? " is-on" : "") + '" data-nett="' + p.key + '">' + p.label + "</button>";
             }).join("") +
           "</div>" +
           '<div class="seg">' +
@@ -1314,7 +1329,7 @@
         '<div class="bucket-strip" style="margin-top:14px">' +
           buckets.map(function (b, i) {
             const label = b.t ? new Date(b.t * 1000).toTimeString().slice(0, 5) : String(i + 1);
-            return "<article><div class='lbl'>" + label + "</div><div class='val' style='font-size:16px'>" + (b.ms < 0 ? "—" : b.ms + " ms") + "</div><div class='hero-sub'>丢包 " + (b.loss || 0).toFixed(1) + "%</div></article>";
+            return "<article><div class='lbl'>" + label + "</div><div class='val' style='font-size:16px'>" + (b.ms < 0 ? "—" : b.ms + " ms") + "</div><div class='hero-sub'>丢包 " + (b.loss != null && b.loss >= 0 ? b.loss.toFixed(1) + "%" : "—") + "</div></article>";
           }).join("") +
         "</div>" +
       "</section>" + cycleBlock();
@@ -1322,20 +1337,7 @@
 
   function renderResource() {
     const servers = state.servers || [];
-    const last7 = [];
-    for (let i = 0; i < 7; i += 1) {
-      let up = 0;
-      let down = 0;
-      let date = "";
-      servers.forEach(function (s) {
-        const row = (s.daily_traffic || [])[i];
-        if (!row) return;
-        up += row.uplink;
-        down += row.downlink;
-        date = row.date;
-      });
-      last7.push({ date: date, uplink: up, downlink: down, total: up + down });
-    }
+    const last7 = ProbeAdapt.lastDaysAcross(servers, 7);
     const monthCostVal = monthCost();
     const ranked = servers.slice().sort(function (a, b) {
       return pct(b.traffic_used, b.traffic_limit) - pct(a.traffic_used, a.traffic_limit);
@@ -1614,7 +1616,7 @@
       location.replace("/");
       return;
     }
-    state = payload;
+    state = ProbeAdapt.normalizePayload(payload);
     liveMode = true;
     if (state.title) {
       document.title = state.title;

@@ -66,12 +66,26 @@
       const y = h - padY - ((v < 0 ? min : v) - min) / span * (h - padY * 2);
       return [x, y];
     });
+    const runs = (global.ProbeAdapt && ProbeAdapt.sparkRuns)
+      ? ProbeAdapt.sparkRuns(pts)
+      : (usable.length ? [[0, pts.length - 1]] : []);
     let d = "";
-    coords.forEach(function (p, i) {
-      d += (i ? " L " : "M ") + p[0].toFixed(2) + " " + p[1].toFixed(2);
+    let area = "";
+    const baseY = (h - padY).toFixed(2);
+    runs.forEach(function (run) {
+      let seg = "";
+      for (let i = run[0]; i <= run[1]; i += 1) {
+        const p = coords[i];
+        seg += (i === run[0] ? "M " : " L ") + p[0].toFixed(2) + " " + p[1].toFixed(2);
+      }
+      if (!seg) return;
+      d += (d ? " " : "") + seg;
+      const first = coords[run[0]];
+      const lastPt = coords[run[1]];
+      area += '<path class="spark-fill" d="' + seg + " L " + lastPt[0].toFixed(2) + " " + baseY + " L " + first[0].toFixed(2) + " " + baseY + ' Z" fill="' + inkRgba(0.08) + '" stroke="none"/>';
     });
-    const last = coords[coords.length - 1];
-    const first = coords[0];
+    const lastRun = runs[runs.length - 1];
+    const last = lastRun ? coords[lastRun[1]] : coords[coords.length - 1];
     const color = opt.color || token("--ink", "#d5d0c4");
     const hitW = Math.max(6, step || w);
     const hits = coords.map(function (p, i) {
@@ -84,17 +98,17 @@
       const y = (h - padY - t * innerH).toFixed(2);
       grid += '<line class="spark-grid" x1="' + padX + '" y1="' + y + '" x2="' + (w - padX) + '" y2="' + y + '" stroke="' + inkRgba(t === 0 ? 0.16 : 0.08) + '" stroke-width="0.6"/>';
     });
-    const area = d
-      ? '<path class="spark-fill" d="' + d + " L " + last[0].toFixed(2) + " " + (h - padY).toFixed(2) + " L " + first[0].toFixed(2) + " " + (h - padY).toFixed(2) + ' Z" fill="' + inkRgba(0.08) + '" stroke="none"/>'
-      : "";
     const packed = coords.map(function (p, i) {
       return p[0].toFixed(2) + "," + p[1].toFixed(2) + "," + pts[i];
     }).join(";");
+    const dot = last && usable.length
+      ? '<circle cx="' + last[0].toFixed(2) + '" cy="' + last[1].toFixed(2) + '" r="1.7" fill="' + color + '"/>'
+      : "";
     return (
       '<svg class="spark" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" data-pts="' + packed + '">' +
         grid + area +
-        '<path class="spark-line" d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.25" vector-effect="non-scaling-stroke"/>' +
-        '<circle cx="' + last[0].toFixed(2) + '" cy="' + last[1].toFixed(2) + '" r="1.7" fill="' + color + '"/>' +
+        (d ? '<path class="spark-line" d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.25" vector-effect="non-scaling-stroke"/>' : "") +
+        dot +
         '<g class="scope-cur" hidden>' +
           '<line class="scope-v" x1="0" y1="0" x2="0" y2="' + h + '" stroke="' + color + '" stroke-width="0.8" opacity="0.55"/>' +
           '<circle class="scope-dot" cx="0" cy="0" r="2.4" fill="none" stroke="' + color + '" stroke-width="1"/>' +
