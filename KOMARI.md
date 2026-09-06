@@ -31,14 +31,10 @@ zip 里必须是：
 komari-theme.json
 preview.svg
 dist/index.html
-dist/css/app.css
-dist/js/adapt.js
-dist/js/api.js
-dist/js/app.js
-dist/js/charts.js
-dist/js/config.js
-dist/js/data.js
-dist/js/komari.js
+dist/css/       # 全部样式，含 fonts.css
+dist/js/        # 全部脚本，含 komari.js
+dist/img/       # 图标与纹理
+dist/fonts/     # 字体分包与 OFL 许可证
 ```
 
 ## 二、在 Komari 后台安装

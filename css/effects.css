@@ -1,0 +1,66 @@
+/* Temporary local effect lab. Treatments share the existing ink and paper palette. */
+@keyframes fx-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; opacity: .8; }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--live) 14%, transparent); opacity: 1; }
+}
+html[data-fx-pulse="1"] .dot:not(.is-off) { animation: fx-breathe 3.6s ease-in-out infinite; }
+html[data-fx-pulse="0"] .dot { animation: none; }
+html[data-fx-grid="1"] .home-globe {
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+html[data-fx-frame="1"] .home-globe::before,
+html[data-fx-frame="1"] .home-globe::after {
+  content: ""; position: absolute; width: 18px; height: 18px; pointer-events: none; z-index: 2;
+  border-color: var(--gold); border-style: solid; opacity: .65;
+}
+html[data-fx-frame="1"] .home-globe::before { top: -1px; left: -1px; border-width: 1px 0 0 1px; }
+html[data-fx-frame="1"] .home-globe::after { right: -1px; bottom: -1px; border-width: 0 1px 1px 0; }
+html[data-fx-glow="1"] .spark-line { filter: drop-shadow(0 0 2px var(--live)); stroke-width: 1.5; }
+html[data-fx-entrance="0"] .stage { animation: none; }
+html[data-fx-hover="1"] .fx-hovering {
+  background-image: radial-gradient(180px circle at var(--fx-x,50%) var(--fx-y,50%), color-mix(in srgb, var(--gold) 10%, transparent), transparent 100%);
+}
+#fx-launcher {
+  position: fixed; z-index: 87; right: 20px; bottom: 18px;
+  display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 0 14px;
+  background: var(--void); color: var(--ink); border: 1px solid var(--line-strong);
+  box-shadow: 0 4px 18px rgba(0,0,0,.18); font: 12px var(--sans);
+}
+#fx-launcher svg { width: 16px; height: 16px; stroke: var(--gold); fill: var(--void); stroke-width: 1; }
+#fx-launcher small { color: var(--ink-dim); font-size: 10px; border-left: 1px solid var(--line-strong); padding-left: 9px; }
+#fx-launcher:hover, #fx-launcher[aria-expanded="true"] { border-color: var(--gold); }
+#fx-panel { right: 20px; bottom: 72px; width: 288px; max-height: min(760px, calc(100dvh - 96px)); box-shadow: var(--shadow); scrollbar-width: thin; font-family: var(--sans); letter-spacing: 0; }
+#fx-panel[hidden] { display: none; }
+#fx-panel header { padding: 12px 16px; position: sticky; top: 0; z-index: 2; background: var(--void); font: 13px var(--sans); color: var(--ink); letter-spacing: 0; }
+#fx-panel header > span { display: flex; gap: 12px; align-items: center; }
+#fx-counter { font: 10px var(--mono); color: var(--gold); }
+#fx-panel .fx-min { width: 32px; height: 32px; font-size: 21px; }
+#fx-panel .fx-body { padding: 14px 16px; }
+.fx-presets { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+.fx-presets button { min-height: 36px; font-size: 12px; background: var(--wash); color: var(--ink); border: 1px solid var(--line-strong); }
+.fx-presets button:hover { border-color: var(--gold); }
+.fx-section { margin: 20px 0 7px; padding-bottom: 9px; border-bottom: 1px solid var(--line); color: var(--ink-dim); font-size: 10px; letter-spacing: .1em; }
+#fx-panel .fx-row { min-height: 36px; padding: 6px 0; font-size: 12px; cursor: pointer; }
+#fx-panel .fx-row input {
+  appearance: none; width: 28px; height: 16px; padding: 0; margin: 0;
+  border: 1px solid var(--line-strong); background: var(--wash); border-radius: 9px; cursor: pointer; position: relative;
+}
+#fx-panel .fx-row input::before { content: ""; position: absolute; top: 3px; left: 3px; width: 8px; height: 8px; background: var(--ink-dim); border-radius: 50%; transition: transform .18s ease; }
+#fx-panel .fx-row input:checked { border-color: var(--live); background: color-mix(in srgb, var(--live) 18%, transparent); }
+#fx-panel .fx-row input:checked::before { background: var(--live); transform: translateX(12px); }
+#fx-panel .fx-row input:focus-visible, #fx-panel summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+.fx-tuning { margin-top: 14px; border-top: 1px solid var(--line); }
+.fx-tuning summary { padding: 14px 0; color: var(--ink-dim); font-size: 11px; cursor: pointer; }
+.fx-local-note { font-size: 10px; color: var(--ink-dim); margin: 10px 0 0; }
+.is-locked #fx-panel, .is-locked #fx-launcher { visibility: hidden; }
+html[data-fx-paused], html[data-fx-paused] * { animation-play-state: paused !important; }
+@media (max-width: 760px) {
+  #fx-launcher { right: 12px; bottom: 12px; }
+  #fx-panel { right: 12px; bottom: 66px; width: min(288px, calc(100vw - 24px)); max-height: calc(100dvh - 88px); }
+  #fx-panel .fx-row { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-fx-flow="1"], html[data-fx-pulse="1"] .dot { animation: none !important; }
+  #fx-panel .fx-row input::before { transition: none; }
+}

@@ -19,19 +19,63 @@
   let range = "1h";
   let targetKey = "";
   let lastFocus = null;
-  let lastView = "list";
+  // Apply the new home default once; subsequent explicit choices still persist.
+  if (localStorage.getItem("mmwx-view-default") !== "detail-v1") {
+    localStorage.setItem("mmwx-view", "column");
+    localStorage.setItem("mmwx-view-default", "detail-v1");
+  }
+  let lastView = ["grid", "column", "list"].includes(localStorage.getItem("mmwx-view")) ? localStorage.getItem("mmwx-view") : "column";
   let fastestLineI = -1;
   let fastestLandI = -1;
   let sortKey = "name";
   let sortDir = 1;
   let findQ = "";
+  let statusFilter = "all";
+  let regionFilter = "";
+  let loadState = forcedDemo() ? "ready" : "loading";
+  let lastUpdated = forcedDemo() ? new Date() : null;
+  let refreshPending = false;
+  let streamStarted = false;
+  let composing = false;
+
+  function needsAttention(s) {
+    return !s.online || (s.cpu_pct != null && s.cpu_pct >= 85)
+      || (s.traffic_limit > 0 && pct(s.traffic_used, s.traffic_limit) >= 90)
+      || (pingLoss(s) != null && pingLoss(s) >= 2);
+  }
+
+  function paintConnection() {
+    const el = document.getElementById("connection-status");
+    if (!el) return;
+    const stale = lastUpdated && Date.now() - lastUpdated.getTime() > 45000;
+    const text = forcedDemo() ? "本地演示 · 非真实数据" : loadState === "loading" ? "正在连接" : loadState === "error" ? "连接失败" : state.enabled === false ? "探针未开启" : stale ? "数据待更新" : "数据已同步";
+    el.textContent = text;
+    el.dataset.tone = forcedDemo() ? "demo" : (stale || loadState === "error") ? "warn" : "ok";
+    const btn = document.getElementById("refresh-data");
+    if (btn) { btn.disabled = refreshPending; btn.textContent = refreshPending ? "刷新中…" : "↻ 刷新"; }
+  }
+
+  function refreshData() {
+    if (refreshPending) return;
+    if (forcedDemo()) { tickDemo(); return; }
+    refreshPending = true;
+    if (!lastUpdated) loadState = "loading";
+    render();
+    return ProbeAPI.fetchServers().then(function (payload) {
+      if (payload && (Array.isArray(payload.servers) || payload.enabled === false)) {
+        applyLive(payload);
+        if (payload.enabled !== false && !streamStarted) {
+          streamStarted = true;
+          ProbeAPI.connectWS(applyLive);
+        }
+      } else { loadState = "error"; }
+    }).catch(function () { loadState = "error"; }).finally(function () {
+      refreshPending = false;
+      render();
+    });
+  }
   let home = "nodes";
-  let showGlobe = localStorage.getItem("mmwx-globe") !== "0";
-  let globeLon = 80;
-  let globeLat = 30;
-  let globeDrag = null;
-  let globeSkipClick = false;
-  let globeLabelSide = {};
+  let showGlobe = localStorage.getItem("mmwx-globe") == null ? !matchMedia("(max-width: 720px)").matches : localStorage.getItem("mmwx-globe") !== "0";
   let netIndex = 0;
   let netTarget = "all";
   let pulseDay = new Date().getDate();
@@ -159,7 +203,7 @@
     return (
       '<span class="name">' +
         lamp(server) +
-        '<span class="name-t">' + (server.name || "未命名") + "</span>" +
+        '<span class="identity-text"><span class="name-t">' + escAttr(server.name || "未命名") + '</span><span class="node-place">' + escAttr(server.region_label || server.region_country || "") + "</span></span>" +
         nodeTags(server, i) +
       "</span>"
     );
@@ -309,7 +353,7 @@
   function route() {
     const raw = (location.hash || "#/").replace(/^#/, "") || "/";
     const parts = raw.split("/").filter(Boolean);
-    let view = lastView || "list";
+    let view = lastView || "column";
     let node = null;
     let page = "overview";
     let section = "nodes";
@@ -349,7 +393,7 @@
       if (node == null) return "#/" + sec;
       return "#/" + sec + "/node/" + node + (page && page !== "overview" ? "/" + page : "");
     }
-    const v = view || lastView || "list";
+    const v = view || lastView || "column";
     const base = "/" + v;
     if (node == null) return "#" + base;
     const rest = page && page !== "overview" ? "/" + page : "";
@@ -459,45 +503,7 @@
     return " is-ok";
   }
 
-  function cardCoord(server) {
-    const ll = ProbeAdapt.coords(server);
-    if (!ll) return ccText(server);
-    return Math.abs(ll[1]).toFixed(1) + (ll[1] >= 0 ? "N" : "S") + "  " + Math.abs(ll[0]).toFixed(1) + (ll[0] >= 0 ? "E" : "W");
-  }
-
-  function lookAtCountry(cc) {
-    const ll = ProbeAdapt.COUNTRY_LL[cc];
-    if (!ll) return;
-    globeLon = ll[0];
-    globeLat = Math.max(-78, Math.min(78, ll[1]));
-    paintGlobe();
-  }
-
-  function card(server, i) {
-    return (
-      '<button class="cell' + cardTone(server) + '" data-index="' + i + '" type="button">' +
-        '<div class="card">' +
-          '<span class="card-coord">' + cardCoord(server) + "</span>" +
-          '<div class="card-face">' +
-            '<div class="head">' +
-              '<span class="cc">' + ccText(server) + "</span>" +
-              nameCell(server, i) +
-            "</div>" +
-            '<div class="speeds">' +
-              '<span>实时网速　↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></span>" +
-            "</div>" +
-            pingReadout(server) +
-            sparkOf(server, false, true) +
-            meters(server) +
-            quotaBar(server) +
-            '<div class="meta">' +
-              "<span>在线 " + fmtDays(server.uptime) + "</span>" +
-            "</div>" +
-          "</div>" +
-        "</div>" +
-      "</button>"
-    );
-  }
+  function card(server, i) { return ProbeConsole.node(server, i, false); }
 
   function row(server, i) {
     return (
@@ -527,43 +533,7 @@
     );
   }
 
-  function slab(server, i) {
-    const ms = pingMs(server);
-    const st = dailyStats(server);
-    const routes = (server.return_routes || []).map(function (rt) {
-      return (CARRIER[rt.carrier] || rt.carrier) + " <b>" + (rt.route_type || "—") + "</b>";
-    }).join("　");
-    return (
-      '<button class="slab" data-index="' + i + '" type="button">' +
-        '<div class="slab-top">' +
-          '<div class="head">' +
-            '<span class="cc">' + ccText(server) + "</span>" +
-            nameCell(server, i) +
-          "</div>" +
-          '<span class="more">打开窗口 →</span>' +
-        "</div>" +
-        '<div class="slab-grid">' +
-          "<div>" +
-            '<div class="slab-ms is-' + pingBand(server) + '">' + (ms < 0 ? "—" : ms) + "<small>ms</small></div>" +
-            '<div class="slab-loss is-' + lossBand(server) + '">' + fmtLoss(server) + "</div>" +
-            '<div class="speeds">↓ <b>' + fmtSpeed(server.download_speed) + "</b>　↑ <b>" + fmtSpeed(server.upload_speed) + "</b></div>" +
-            sparkOf(server, true) +
-          "</div>" +
-          "<div>" +
-            meters(server) +
-            '<div class="slab-quota">' + quotaBar(server) + "</div>" +
-            '<div class="meta">' +
-              "<span>在线 " + fmtDays(server.uptime) + "</span>" +
-            "</div>" +
-          "</div>" +
-          "<div>" +
-            '<div class="stat-col">近 7 日均 ' + fmtBytes(st.avg, 1) + "</div>" +
-            '<div class="slab-routes">' + (routes || "暂无回程") + "</div>" +
-          "</div>" +
-        "</div>" +
-      "</button>"
-    );
-  }
+  function slab(server, i) { return ProbeConsole.node(server, i, true); }
 
   function pulseInfo(day) {
     return pulse.find(function (p) { return p.day === day; }) || pulse[0];
@@ -674,7 +644,7 @@
   function listedServers() {
     let items = (state.servers || []).map(function (s, i) { return { s: s, i: i }; });
     if (findQ) {
-      const q = findQ.toLowerCase();
+      const q = findQ.trim().toLowerCase();
       items = items.filter(function (it) {
         const s = it.s;
         return ((s.name || "").toLowerCase().indexOf(q) >= 0)
@@ -684,6 +654,11 @@
           || ((s.region_label || "").toLowerCase().indexOf(q) >= 0);
       });
     }
+    items = items.filter(function (it) {
+      return statusFilter === "all" || (statusFilter === "online" && it.s.online)
+        || (statusFilter === "offline" && !it.s.online) || (statusFilter === "attention" && needsAttention(it.s));
+    });
+    if (regionFilter) items = items.filter(it => it.s.region_country === regionFilter);
     const dir = sortDir;
     const key = sortKey;
     items.sort(function (a, b) { return cmpServer(a.s, b.s, key) * dir; });
@@ -696,32 +671,32 @@
   }
 
   function listToolbar(r) {
-    return (
-      '<div class="list-bar" id="views">' +
-        '<div class="list-bar-left">' +
-          '<span class="list-bar-k">机器清单</span>' +
-          '<input class="find" data-find type="search" placeholder="筛选" value="' + escAttr(findQ) + '" autocomplete="off" spellcheck="false">' +
-        "</div>" +
-        '<div class="views">' +
-          '<button class="icon-btn' + (r.view === "grid" ? " is-on" : "") + '" data-view="grid" type="button" aria-label="网格排列" title="网格">' + iconGrid() + "</button>" +
-          '<button class="icon-btn' + (r.view === "column" ? " is-on" : "") + '" data-view="column" type="button" aria-label="列排列" title="列">' + iconColumn() + "</button>" +
-          '<button class="icon-btn' + (r.view === "list" ? " is-on" : "") + '" data-view="list" type="button" aria-label="横向排列" title="横向">' + iconList() + "</button>" +
-          '<button class="icon-btn' + (showGlobe ? " is-on" : "") + '" data-globe type="button" aria-label="显示地球" title="地球开/关">' + iconGlobe() + "</button>" +
-        "</div>" +
-      "</div>"
-    );
+    const servers = state.servers || [];
+    const filters = [["all", "全部", servers.length], ["online", "在线", servers.filter(s => s.online).length], ["offline", "离线", servers.filter(s => !s.online).length], ["attention", "需关注", servers.filter(needsAttention).length]];
+    return '<section class="node-toolbar" aria-label="节点筛选">' +
+      '<div class="list-bar" id="views"><div class="list-bar-left"><h2 class="list-bar-k">节点清单</h2><span class="result-count" role="status">' + listedServers().length + ' / ' + servers.length + ' 台</span>' + (regionFilter ? '<button type="button" class="region-clear" data-region="' + escAttr(regionFilter) + '">' + escAttr(regionFilter) + ' ×</button>' : '') + '</div>' +
+      '<div class="views">' + [["grid", "卡片", iconGrid()], ["column", "详细", iconColumn()], ["list", "列表", iconList()]].map(function (v) {
+        return '<button class="view-btn' + (r.view === v[0] ? ' is-on' : '') + '" data-view="' + v[0] + '" type="button" aria-pressed="' + (r.view === v[0]) + '">' + v[2] + '<span>' + v[1] + '</span></button>';
+      }).join('') + '<button class="view-btn globe-toggle' + (showGlobe ? ' is-on' : '') + '" data-globe type="button" aria-pressed="' + showGlobe + '">' + iconGlobe() + '<span>地球</span></button></div></div>' +
+      '<div class="filter-row"><div class="status-filters" aria-label="节点状态">' + filters.map(function (f) {
+        return '<button type="button" data-status="' + f[0] + '" class="filter-chip' + (statusFilter === f[0] ? ' is-on' : '') + '" aria-pressed="' + (statusFilter === f[0]) + '"' + (f[0] === 'attention' ? ' title="离线、CPU ≥ 85%、流量 ≥ 90% 或丢包 ≥ 2%"' : '') + '>' + f[1] + ' <span>' + f[2] + '</span></button>';
+      }).join('') + '</div><div class="filter-tools"><label class="search-box"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input class="find" data-find type="search" aria-label="搜索节点名称或地区" placeholder="搜索名称、地区…" value="' + escAttr(findQ) + '" autocomplete="off" spellcheck="false"><kbd>/</kbd></label>' +
+      '<select class="sort-select" data-order aria-label="节点排序">' + [["name", "名称"], ["cc", "地区"], ["ms", "延迟"], ["cpu", "CPU"], ["mem", "内存"], ["disk", "硬盘"], ["traffic", "流量占比"], ["up", "下行网速"], ["days", "在线时长"]].map(function (v) { return '<option value="' + v[0] + '"' + (sortKey === v[0] ? ' selected' : '') + '>按' + v[1] + '</option>'; }).join('') + '</select><button class="order-dir" type="button" data-sort="' + sortKey + '" aria-label="切换排序方向" title="' + (sortDir > 0 ? '当前升序' : '当前降序') + '">' + (sortDir > 0 ? '↑' : '↓') + '</button></div></div>' +
+      '<div class="list-help"><span>' + (statusFilter === 'attention' ? '关注条件：离线 · CPU ≥ 85% · 流量 ≥ 90% · 丢包 ≥ 2%' : '点击节点查看详情 · 支持名称、地区搜索') + '</span>' + ((findQ || statusFilter !== 'all' || regionFilter) ? '<button data-reset type="button">清除筛选 ×</button>' : '<span>线路 / 落地延迟分别展示</span>') + '</div></section>';
   }
 
   function renderFoot() {
+    paintConnection();
+    if (!lastUpdated || state.enabled === false) { foot.innerHTML = ""; return; }
     const t = totals();
     foot.innerHTML =
       "<div>总使用流量　<b>" + fmtBytes(t.used, 2) + " / " + fmtBytes(t.limit, 2) + "</b></div>" +
       "<div>在线服务器　<b>" + t.online + " / " + t.all + "</b></div>" +
-      "<div>最后更新　<b>" + clock(new Date()) + "</b>　·　" + (liveMode ? (state._source === "komari" ? "Komari 接口" : "官方接口") : "演示数据") + "</div>";
+      "<div>最后更新　<b>" + clock(lastUpdated) + "</b>　·　" + (liveMode ? (state._source === "komari" ? "Komari 接口" : "官方接口") : "演示数据") + "</div>";
   }
 
   function listEmpty() {
-    return '<section class="state"><h2>暂无节点</h2><p>官方接口还没有返回可展示的服务器。</p></section>';
+    return '<section class="state search-empty"><span class="empty-mark">⌕</span><h2>没有匹配的节点</h2><p>试试其他名称、地区，或清除当前筛选条件。</p><button class="action-btn" type="button" data-reset>清除筛选</button></section>';
   }
 
   function renderGrid(r) {
@@ -739,7 +714,7 @@
     const items = listedServers();
     main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + '<section class="stack" aria-label="列排列">' + items.map(function (item) {
       return slab(item.s, item.i);
-    }).join("") + "</section>" + cycleBlock();
+    }).join("") + "</section>" + (items.length ? "" : listEmpty()) + cycleBlock();
   }
 
   function renderList(r) {
@@ -747,7 +722,7 @@
     const items = listedServers();
     main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + '<section class="list" aria-label="横向排列">' + listHead() + items.map(function (item) {
       return row(item.s, item.i);
-    }).join("") + "</section>" + cycleBlock();
+    }).join("") + "</section>" + (items.length ? "" : listEmpty()) + cycleBlock();
   }
 
   function nodeCtx(index) {
@@ -768,203 +743,7 @@
     return { s: s, ping: ping, sparkVals: sparkVals, st: dailyStats(s), last7: ProbeAdapt.lastDays(s.daily_traffic, 7) };
   }
 
-  function heroLine(s, ping) {
-    const ms = ping ? ping.current_ms : -1;
-    return (
-      '<header class="hero">' +
-        "<div>" +
-          '<div class="hero-sub">' +
-            (s.online ? "在线" : "离线") + (ProbeAdapt.roleLabel(roleOf(s)) ? " · " + ProbeAdapt.roleLabel(roleOf(s)) : "") + (s.region_country ? " · " + s.region_country : "") +
-            (s.provider_name ? " · " + s.provider_name : "") +
-            " · 在线 " + fmtDays(s.uptime) +
-          "</div>" +
-        "</div>" +
-        '<div class="hero-pulse">' +
-          '<div class="ms-xl is-' + pingBand(s) + '">' + (ms < 0 ? "—" : ms) + "<small>ms</small></div>" +
-          '<div class="hero-loss is-' + lossBand(s) + '">' + fmtLoss(s) + "</div>" +
-        "</div>" +
-      "</header>"
-    );
-  }
-
-  function pageOverview(ctx) {
-    const s = ctx.s;
-    return (
-      '<article class="page page-overview">' +
-        heroLine(s, ctx.ping) +
-        '<section class="kpi">' +
-          '<article><div class="lbl">下行</div><div class="val">' + fmtSpeed(s.download_speed) + '</div><div class="sub">上行 ' + fmtSpeed(s.upload_speed) + "</div></article>" +
-          '<article><div class="lbl">CPU</div><div class="val">' + Math.round(s.cpu_pct || 0) + '%</div><div class="sub">负载 ' + ((s.loadavg || "—").toString().trim().split(/\s+/).join(" · ")) + "</div></article>" +
-          '<article><div class="lbl">内存</div><div class="val">' + Math.round(pct(s.mem_used, s.mem_total)) + '%</div><div class="sub">' + fmtBytes(s.mem_used, 1) + " / " + fmtBytes(s.mem_total, 0) + "</div></article>" +
-          '<article><div class="lbl">硬盘</div><div class="val">' + Math.round(pct(s.disk_used, s.disk_total)) + '%</div><div class="sub">' + fmtBytes(s.disk_used, 0) + " / " + fmtBytes(s.disk_total, 0) + "</div></article>" +
-          '<article><div class="lbl">周期流量</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">' + (s.traffic_limit ? "限额 " + fmtBytes(s.traffic_limit, 2) : "无限额") + "</div></article>" +
-        "</section>" +
-        '<section class="panels" style="min-height:0;height:100%">' +
-          '<div class="chart-fill"><div class="panel-h"><h3>延迟</h3><span class="hero-sub">丢包 ' + fmtPingLoss(ctx.ping) + "</span></div>" +
-            ProbeCharts.spark(ctx.sparkVals, { w: 640, h: 180, color: pingColor(s), tips: pingTips(ctx.sparkVals, 5) }) +
-          "</div>" +
-          '<div class="chart-fill"><div class="panel-h"><h3>近 7 日</h3><span class="hero-sub">均 ' + fmtBytes(ctx.st.avg, 1) + "</span></div>" +
-            ProbeCharts.bars(ctx.last7, { w: 360, h: 180 }) +
-          "</div>" +
-        "</section>" +
-      "</article>"
-    );
-  }
-
-  function pagePing(ctx) {
-    const s = ctx.s;
-    return (
-      '<article class="page page-ping">' +
-        '<div class="panel-h">' +
-          "<div><h3 style='margin:0'>延迟 · 丢包 " + fmtPingLoss(ctx.ping) + "</h3></div>" +
-          '<div class="seg">' +
-            ["1h", "6h", "24h"].map(function (k) {
-              return '<button type="button" data-range="' + k + '" class="' + (range === k ? "is-on" : "") + '">' + k + "</button>";
-            }).join("") +
-          "</div>" +
-        "</div>" +
-        '<div class="chart-fill">' +
-          '<div class="targets">' +
-            (s.ping || []).map(function (p) {
-              const fake = { online: s.online, ping: [p] };
-              return '<button type="button" class="chip is-' + pingBand(fake) + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " · <b>" + (p.current_ms >= 0 ? p.current_ms + "ms" : "—") + "</b> <i>" + fmtLoss(fake) + "</i></button>";
-            }).join("") +
-          "</div>" +
-          ProbeCharts.spark(ctx.sparkVals, { w: 960, h: 260, color: pingColor(s), tips: pingTips(ctx.sparkVals, range === "24h" ? 30 : range === "6h" ? 10 : 5) }) +
-        "</div>" +
-        ProbeCharts.wave({ w: 960, h: 48 }) +
-      "</article>"
-    );
-  }
-
-  function pageTraffic(ctx) {
-    const s = ctx.s;
-    return (
-      '<article class="page page-traffic">' +
-        '<div style="margin:0 0 16px">' + quotaBar(s) + "</div>" +
-        '<section class="kpi">' +
-          '<article><div class="lbl">已用</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">' + (s.traffic_limit ? "限额 " + fmtBytes(s.traffic_limit, 2) : "无限额") + "</div></article>" +
-          '<article><div class="lbl">上行</div><div class="val">' + fmtBytes(s.traffic_used_up, 1) + '</div><div class="sub">本周期</div></article>' +
-          '<article><div class="lbl">下行</div><div class="val">' + fmtBytes(s.traffic_used_down, 1) + '</div><div class="sub">本周期</div></article>' +
-          '<article><div class="lbl">最高日</div><div class="val">' + fmtBytes(ctx.st.high, 1) + '</div><div class="sub">最低 ' + fmtBytes(ctx.st.low, 1) + "</div></article>" +
-          '<article><div class="lbl">周期</div><div class="val">' + (s.period_start || "").slice(5) + '</div><div class="sub">至 ' + (s.period_end || "").slice(5) + "</div></article>" +
-        "</section>" +
-        '<div class="chart-fill"><div class="panel-h"><h3>近 7 日流量</h3><span class="hero-sub">日均 ' + fmtBytes(ctx.st.avg, 1) + "</span></div>" +
-          ProbeCharts.bars(ctx.last7, { w: 960, h: 220 }) +
-        "</div>" +
-        '<section class="day-grid">' +
-          ctx.last7.map(function (d) {
-            return "<article><div class='lbl'>" + d.date.slice(5) + "</div><div class='val' style='font-size:16px'>" + fmtBytes(d.total, 1) + "</div><div class='hero-sub'>↑ " + fmtBytes(d.uplink, 1) + "　↓ " + fmtBytes(d.downlink, 1) + "</div></article>";
-          }).join("") +
-        "</section>" +
-      "</article>"
-    );
-  }
-
-  function pageRoutes(ctx) {
-    const rows = ctx.s.return_routes || [];
-    return (
-      '<article class="page page-routes">' +
-        '<div class="panel-h"><h3 style="margin:0">三网回程</h3><span class="hero-sub">最近一次探测</span></div>' +
-        '<div class="route-cards">' +
-          (rows.length ? rows.map(function (rt) {
-            return '<article class="route-card"><div class="car">' + (CARRIER[rt.carrier] || rt.carrier) + "</div><div><h3>" + (rt.route_type || "—") + "</h3></div></article>";
-          }).join("") : '<div class="hero-sub">此节点暂无回程数据</div>') +
-        "</div>" +
-      "</article>"
-    );
-  }
-
-  function pageSystem(ctx) {
-    const s = ctx.s;
-    const cells = [
-      ["系统", s.os || "—"],
-      ["内核", s.kernel || "—"],
-      ["架构", s.arch || "—"],
-      ["处理器", (s.cpu_model || "—") + " · " + (s.cpu_cores || "—") + "C / " + (s.cpu_threads || "—") + "T"],
-      ["负载", (s.loadavg || "—").toString().trim().split(/\s+/).join(" · ")],
-      ["到期", s.expires_at || "—"],
-      ["续费", (s.renewal_price_cny != null ? "¥" + s.renewal_price_cny : "—") + " / " + (CYCLE[s.renewal_cycle] || "")],
-      ["周期", (s.period_start || "") + " → " + (s.period_end || "")],
-    ];
-    return (
-      '<article class="page page-system">' +
-        '<section class="spec">' +
-          cells.map(function (c) {
-            return "<article><div class='lbl'>" + c[0] + "</div><div class='val'>" + c[1] + "</div></article>";
-          }).join("") +
-        "</section>" +
-      "</article>"
-    );
-  }
-
-  function pageHTML(index) {
-    const ctx = nodeCtx(index);
-    if (!ctx) return "";
-    const s = ctx.s;
-    const routes = s.return_routes || [];
-    return (
-      '<article class="sheet">' +
-        '<header class="sheet-head">' +
-          '<div>' +
-            '<div class="hero-sub">' + (s.online ? "在线" : "离线") + (ProbeAdapt.roleLabel(roleOf(s)) ? " · " + ProbeAdapt.roleLabel(roleOf(s)) : "") + (s.region_country ? " · " + s.region_country : "") + (s.provider_name ? " · " + s.provider_name : "") + " · " + fmtDays(s.uptime) + "</div>" +
-          "</div>" +
-          '<div class="ms-xl">' + (ctx.ping && ctx.ping.current_ms >= 0 ? ctx.ping.current_ms : "—") + "<small>MS</small></div>" +
-        "</header>" +
-        ProbeCharts.wave({ w: 960, h: 36 }) +
-        '<section class="kpi">' +
-          '<article><div class="lbl">下行</div><div class="val">' + fmtSpeed(s.download_speed) + '</div><div class="sub">上行 ' + fmtSpeed(s.upload_speed) + "</div></article>" +
-          '<article><div class="lbl">CPU</div><div class="val">' + Math.round(s.cpu_pct || 0) + '%</div><div class="sub">' + ((s.loadavg || "—").toString().trim().split(/\s+/).join(" · ")) + "</div></article>" +
-          '<article><div class="lbl">内存</div><div class="val">' + Math.round(pct(s.mem_used, s.mem_total)) + '%</div><div class="sub">' + fmtBytes(s.mem_used, 1) + " / " + fmtBytes(s.mem_total, 0) + "</div></article>" +
-          '<article><div class="lbl">硬盘</div><div class="val">' + Math.round(pct(s.disk_used, s.disk_total)) + '%</div><div class="sub">' + fmtBytes(s.disk_used, 0) + " / " + fmtBytes(s.disk_total, 0) + "</div></article>" +
-          '<article><div class="lbl">流量</div><div class="val">' + fmtBytes(s.traffic_used, 1) + '</div><div class="sub">' + (s.traffic_limit ? fmtBytes(s.traffic_limit, 2) : "无限额") + " · 丢包 " + fmtPingLoss(ctx.ping) + "</div></article>" +
-        "</section>" +
-        '<section class="sheet-mid">' +
-          '<div class="panel tight">' +
-            '<div class="panel-h"><h3>延迟</h3>' +
-              '<div class="seg">' + ["1h", "6h", "24h"].map(function (k) {
-                return '<button type="button" data-range="' + k + '" class="' + (range === k ? "is-on" : "") + '">' + k + "</button>";
-              }).join("") + "</div>" +
-            "</div>" +
-            '<div class="targets">' +
-              (s.ping || []).map(function (p) {
-                return '<button type="button" class="chip' + (p.key === targetKey ? " is-on" : "") + '" data-target="' + p.key + '">' + p.label + " " + (p.current_ms >= 0 ? p.current_ms + "ms" : "—") + "</button>";
-              }).join("") +
-            "</div>" +
-            ProbeCharts.spark(ctx.sparkVals, { w: 520, h: 88, color: cssVar("--ink", "#d5d0c4"), tips: pingTips(ctx.sparkVals, range === "24h" ? 30 : range === "6h" ? 10 : 5) }) +
-          "</div>" +
-          '<div class="panel tight">' +
-            '<div class="panel-h"><h3>近 7 日</h3><span class="hero-sub">均 ' + fmtBytes(ctx.st.avg, 1) + " · 高 " + fmtBytes(ctx.st.high, 1) + "</span></div>" +
-            ProbeCharts.bars(ctx.last7, { w: 320, h: 88, tips: trafficTips(ctx.last7) }) +
-            '<div class="day-inline">' + ctx.last7.map(function (d) {
-              return "<span>" + d.date.slice(8) + " " + fmtBytes(d.total, 1) + "</span>";
-            }).join("") + "</div>" +
-          "</div>" +
-        "</section>" +
-        '<section class="sheet-bot">' +
-          '<div class="panel tight">' +
-            '<div class="panel-h"><h3>三网回程</h3></div>' +
-            '<div class="routes compact">' +
-              (routes.length ? routes.map(function (rt) {
-                return '<div class="route"><span class="car">' + (CARRIER[rt.carrier] || rt.carrier) + "</span><span>" + (rt.route_type || "—") + "</span></div>";
-              }).join("") : '<div class="hero-sub">暂无回程</div>') +
-            "</div>" +
-          "</div>" +
-          '<div class="panel tight">' +
-            '<div class="panel-h"><h3>系统</h3></div>' +
-            '<div class="sys-grid">' +
-              "<div>系统 <b>" + (s.os || "—") + "</b></div>" +
-              "<div>内核 <b>" + (s.kernel || "—") + "</b></div>" +
-              "<div>架构 <b>" + (s.arch || "—") + "</b></div>" +
-              "<div>CPU <b>" + (s.cpu_model || "—") + " · " + (s.cpu_cores || "—") + "C/" + (s.cpu_threads || "—") + "T</b></div>" +
-              "<div>到期 <b>" + (s.expires_at || "—") + "</b></div>" +
-              "<div>续费 <b>¥" + (s.renewal_price_cny != null ? s.renewal_price_cny : "—") + " / " + (CYCLE[s.renewal_cycle] || "") + "</b></div>" +
-            "</div>" +
-          "</div>" +
-        "</section>" +
-      "</article>"
-    );
-  }
+  function pageHTML(index) { const ctx = nodeCtx(index); return ctx ? ProbeConsole.detail(ctx) : ""; }
 
   function closeWindow() {
     const r = route();
@@ -976,445 +755,82 @@
   }
 
   function renderWindow(index, page) {
+    document.getElementById("chart-tip").hidden = true;
+    const opening = overlay.hidden;
+    const scroll = winBody.scrollTop;
     const s = state.servers && state.servers[index];
     if (s == null) {
       overlay.hidden = true;
       document.body.classList.remove("is-locked");
       return;
     }
+    if (window.ProbeWorkbench) ProbeWorkbench.detail(index);
     winTitle.textContent = s.name || "未命名";
     winKicker.textContent = ccText(s) + " / " + (ProbeAdapt.roleLabel(roleOf(s)) || "DETAIL");
     winBody.innerHTML = pageHTML(index);
     overlay.hidden = false;
     document.body.classList.add("is-locked");
     document.documentElement.classList.add("is-locked");
-    winBody.scrollTop = 0;
-  }
-
-  function wrapLon(lon) {
-    return ((lon + 180) % 360 + 360) % 360 - 180;
-  }
-
-  function globeCaption() {
-    const lon = Math.round(globeLon);
-    const lat = Math.round(globeLat);
-    return "ORTHOGRAPHIC · " + Math.abs(lon) + "°" + (lon >= 0 ? "E" : "W") + " " + Math.abs(lat) + "°" + (lat >= 0 ? "N" : "S");
-  }
-
-  function labelWidth(text) {
-    let w = 0;
-    for (let i = 0; i < text.length; i += 1) {
-      w += text.charCodeAt(i) > 255 ? 8.6 : 5.05;
-    }
-    return w + 2;
-  }
-
-  function layoutGlobeLabels(cx, ortho) {
-    const items = [];
-    (state.servers || []).forEach(function (s, i) {
-      const ll = ProbeAdapt.coords(s);
-      if (!ll) return;
-      const p = ortho(ll[0], ll[1]);
-      if (!p) return;
-      const label = ccText(s) + " · " + s.name;
-      items.push({ i: i, s: s, px: p.x, py: p.y, label: label, w: labelWidth(label) });
-    });
-
-    const buckets = {};
-    items.forEach(function (n) {
-      const key = n.s.region_country || "?";
-      (buckets[key] = buckets[key] || []).push(n);
-    });
-    Object.keys(buckets).forEach(function (key) {
-      const g = buckets[key];
-      if (g.length < 2) return;
-      g.forEach(function (n, idx) {
-        const a = (idx / g.length) * Math.PI * 2 - Math.PI / 2;
-        n.px += Math.cos(a) * 4.2;
-        n.py += Math.sin(a) * 4.2;
-      });
-    });
-
-    const left = [];
-    const right = [];
-    items.forEach(function (n) {
-      let side = n.px >= cx ? "R" : "L";
-      if (globeLabelSide[n.i] && Math.abs(n.px - cx) < 22) side = globeLabelSide[n.i];
-      if (side === "L" && n.w > 64) side = "R";
-      (side === "L" ? left : right).push(n);
-    });
-
-    function stack(list, x, end) {
-      list.sort(function (a, b) { return a.py - b.py || a.i - b.i; });
-      if (!list.length) return;
-      const gap = list.length > 14 ? 11 : 13;
-      const mean = list.reduce(function (sum, n) { return sum + n.py; }, 0) / list.length;
-      let y0 = mean - (list.length - 1) * gap / 2;
-      if (y0 < 12) y0 = 12;
-      const last = y0 + (list.length - 1) * gap;
-      if (last > 204) y0 -= last - 204;
-      if (y0 < 12) y0 = 12;
-      list.forEach(function (n, idx) {
-        n.lx = x;
-        n.ly = y0 + idx * gap;
-        n.end = end;
-        globeLabelSide[n.i] = end ? "L" : "R";
-      });
-    }
-
-    stack(left, 70, true);
-    stack(right, 270, false);
-    return items;
-  }
-
-  function clipToLimb(visLL, hidLL, ortho) {
-    let lon0 = visLL[0];
-    let lat0 = visLL[1];
-    let lon1 = hidLL[0];
-    let lat1 = hidLL[1];
-    if (lon1 - lon0 > 180) lon1 -= 360;
-    if (lon0 - lon1 > 180) lon0 -= 360;
-    let lo = 0;
-    let hi = 1;
-    let best = ortho(lon0, lat0);
-    for (let k = 0; k < 7; k += 1) {
-      const t = (lo + hi) / 2;
-      const p = ortho(lon0 + (lon1 - lon0) * t, lat0 + (lat1 - lat0) * t);
-      if (p) {
-        lo = t;
-        best = p;
-      } else {
-        hi = t;
-      }
-    }
-    return best;
-  }
-
-  function landPathData(ortho) {
-    const rings = window.ProbeLand || [];
-    let fill = "";
-    let stroke = "";
-    for (let r = 0; r < rings.length; r += 1) {
-      const ring = rings[r];
-      const n = ring.length;
-      if (n < 3) continue;
-      const vis = new Array(n);
-      for (let i = 0; i < n; i += 1) vis[i] = ortho(ring[i][0], ring[i][1]);
-      let d = "";
-      let drawing = false;
-      for (let i = 0; i < n; i += 1) {
-        const a = vis[i];
-        const b = vis[(i + 1) % n];
-        if (a && b) {
-          if (!drawing) {
-            d += "M " + a.x.toFixed(1) + " " + a.y.toFixed(1);
-            drawing = true;
-          }
-          d += " L " + b.x.toFixed(1) + " " + b.y.toFixed(1);
-        } else if (a && !b) {
-          const c = clipToLimb(ring[i], ring[(i + 1) % n], ortho);
-          if (!drawing) {
-            d += "M " + a.x.toFixed(1) + " " + a.y.toFixed(1);
-            drawing = true;
-          }
-          if (c) d += " L " + c.x.toFixed(1) + " " + c.y.toFixed(1);
-          drawing = false;
-        } else if (!a && b) {
-          const c = clipToLimb(ring[(i + 1) % n], ring[i], ortho);
-          if (c) {
-            d += "M " + c.x.toFixed(1) + " " + c.y.toFixed(1);
-            drawing = true;
-          }
-          d += " L " + b.x.toFixed(1) + " " + b.y.toFixed(1);
-        }
-      }
-      if (d) {
-        fill += d + " Z ";
-        stroke += d + " ";
-      }
-    }
-    return { fill: fill, stroke: stroke };
-  }
-
-  function globeMarkup() {
-    const cx = 168;
-    const cy = 112;
-    const R = 92;
-    const lon0 = globeLon * Math.PI / 180;
-    const lat0 = globeLat * Math.PI / 180;
-    function ortho(lonD, latD) {
-      const lon = lonD * Math.PI / 180;
-      const lat = latD * Math.PI / 180;
-      const cosc = Math.sin(lat0) * Math.sin(lat) + Math.cos(lat0) * Math.cos(lat) * Math.cos(lon - lon0);
-      if (cosc <= 0.02) return null;
-      return {
-        x: cx + R * Math.cos(lat) * Math.sin(lon - lon0),
-        y: cy - R * (Math.cos(lat0) * Math.sin(lat) - Math.sin(lat0) * Math.cos(lat) * Math.cos(lon - lon0)),
-        k: cosc,
-      };
-    }
-    function curve(lonFixed, latFixed, from, to, step) {
-      let d = "";
-      let started = false;
-      for (let a = from; a <= to; a += step) {
-        const p = lonFixed != null ? ortho(lonFixed, a) : ortho(a, latFixed);
-        if (!p) { started = false; continue; }
-        d += (started ? " L " : "M ") + p.x.toFixed(2) + " " + p.y.toFixed(2);
-        started = true;
-      }
-      return d ? '<path class="globe-wire" d="' + d + '" fill="none" stroke-width="0.9"/>' : "";
-    }
-    let wire =
-      '<defs><radialGradient id="globe-shade" cx="38%" cy="36%" r="68%">' +
-        '<stop offset="0%" stop-color="var(--ink)" stop-opacity="0.06"/>' +
-        '<stop offset="70%" stop-color="var(--ink)" stop-opacity="0"/>' +
-        '<stop offset="100%" stop-color="var(--globe-rim)" stop-opacity="1"/>' +
-      "</radialGradient></defs>" +
-      '<circle class="globe-ocean" cx="' + cx + '" cy="' + cy + '" r="' + R + '" />' +
-      '<circle class="globe-disk" cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="url(#globe-shade)" stroke="var(--ink)" stroke-width="1.05"/>';
-    const land = landPathData(ortho);
-    if (land.fill) {
-      wire += '<path class="globe-land" d="' + land.fill + '" />';
-      wire += '<path class="globe-coast" d="' + land.stroke + '" fill="none" />';
-    }
-    for (let lon = -180; lon < 180; lon += 30) wire += curve(lon, null, -80, 80, 4);
-    for (let lat = -60; lat <= 60; lat += 30) wire += curve(null, lat, -180, 180, 4);
-    wire += curve(null, 0, -180, 180, 3).replace('stroke-width="0.9"', 'stroke-width="1.15"');
-    const sweepLon = ((Date.now() / 28) % 360) - 180;
-    const sweepBase = currentTheme() === "light" ? 0.52 : 0.42;
-    for (let k = 0; k < 6; k += 1) {
-      const lon = sweepLon - k * 8;
-      const sweep = curve(lon, null, -80, 80, 3);
-      if (sweep) {
-        wire += sweep
-          .replace('class="globe-wire"', 'class="globe-sweep"')
-          .replace('stroke-width="0.9"', 'stroke-width="' + (k === 0 ? 1.6 : 1.1) + '" style="stroke-opacity:' + (sweepBase - k * 0.06).toFixed(2) + '"');
-      }
-    }
-    wire += '<line class="globe-base" x1="48" y1="' + (cy + R + 16) + '" x2="288" y2="' + (cy + R + 16) + '" stroke-width="1"/>';
-    const laid = layoutGlobeLabels(cx, ortho);
-    let links = "";
-    const online = laid.filter(function (n) { return n.s.online; });
-    online.forEach(function (a, i) {
-      online.forEach(function (b, j) {
-        if (j <= i) return;
-        if ((a.s.region_country || "") === (b.s.region_country || "")) return;
-        if ((a.i * 7 + b.i * 3) % 4 !== 1) return;
-        const mx = (a.px + b.px) / 2;
-        const my = (a.py + b.py) / 2;
-        const qx = cx + (mx - cx) * 0.42;
-        const qy = cy + (my - cy) * 0.42;
-        links += '<path class="globe-link" d="M ' + a.px.toFixed(1) + " " + a.py.toFixed(1) + " Q " + qx.toFixed(1) + " " + qy.toFixed(1) + " " + b.px.toFixed(1) + " " + b.py.toFixed(1) + '" fill="none" stroke-width="0.55"/>';
-      });
-    });
-    const pins = laid.map(function (n) {
-      const tx = n.end ? n.lx - 3 : n.lx + 3;
-      return (
-        '<g class="globe-node">' +
-          '<path d="M ' + n.px.toFixed(1) + " " + n.py.toFixed(1) + " L " + n.lx.toFixed(1) + " " + n.ly.toFixed(1) + '" fill="none" stroke="var(--ink)" stroke-width="0.75"/>' +
-          '<circle cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="2.1" fill="none" stroke="' + pingColor(n.s) + '" stroke-width="1.15"/>' +
-          '<text x="' + tx.toFixed(1) + '" y="' + (n.ly + 3).toFixed(1) + '" text-anchor="' + (n.end ? "end" : "start") + '" fill="var(--ink-soft)" font-size="8.5" font-family="IBM Plex Mono, monospace" stroke="var(--void)" stroke-width="3" paint-order="stroke" stroke-linejoin="round">' + n.label + "</text>" +
-          '<circle class="hit" cx="' + n.px.toFixed(1) + '" cy="' + n.py.toFixed(1) + '" r="9" fill="transparent" data-index="' + n.i + '"/>' +
-        "</g>"
-      );
-    }).join("");
-    return wire + links + pins +
-      '<text class="globe-caption" x="168" y="' + (cy + R + 28) + '" text-anchor="middle" font-size="8" font-family="IBM Plex Mono, monospace" letter-spacing="1.4">' + globeCaption() + "</text>";
+    winBody.scrollTop = opening ? 0 : scroll;
+    document.querySelector(".shell").inert = true;
+    if (opening) document.getElementById("win-close").focus({ preventScroll: true });
   }
 
   function globePanel() {
     if (!showGlobe) return "";
-    function sideGroup(role, title) {
+    const all = state.servers || [];
+    const countries = new Set(all.map(s => s.region_country).filter(Boolean));
+    function group(role, label) {
       const groups = {};
-      (state.servers || []).forEach(function (s) {
+      all.forEach(function (s) {
         const r = roleOf(s);
-        if (role === "line" && r !== "line" && r !== "mixed") return;
-        if (role === "land" && r !== "land" && r !== "mixed") return;
-        const k = s.region_country || "—";
-        (groups[k] = groups[k] || []).push(s);
+        if (r !== role && r !== "mixed") return;
+        const cc = s.region_country || "—";
+        (groups[cc] = groups[cc] || []).push(s);
       });
-      const keys = Object.keys(groups).sort();
-      if (!keys.length) return "";
-      const rows = keys.map(function (k) {
-        let best = null;
-        groups[k].forEach(function (s) {
-          const ms = pingMs(s, role);
-          const bestMs = best ? pingMs(best, role) : -1;
-          if (!best || (ms >= 0 && (bestMs < 0 || ms < bestMs))) best = s;
-        });
-        const ms = best ? pingMs(best, role) : -1;
-        const fake = best ? { online: best.online, ping: [primaryPing(best, role)].filter(Boolean) } : null;
-        return '<button type="button" class="reg" data-aim="' + (k === "—" ? "" : k) + '"><span>' + k + '</span><b class="is-' + (fake ? pingBand(fake) : "ok") + '">' + (ms < 0 ? "—" : ms + "ms") + "</b></button>";
-      }).join("");
-      return '<div class="atlas-group"><div class="lbl">' + title + "</div>" + rows + "</div>";
+      if (!Object.keys(groups).length) return '';
+      return '<div class="atlas-group"><div class="lbl"><span>' + label + '</span><span>最低延迟</span></div>' + Object.keys(groups).sort().map(function (cc) {
+        const list=groups[cc], valid=list.filter(s => s.online && pingMs(s,role)>=0).sort((a,b)=>pingMs(a,role)-pingMs(b,role));
+        const ms=valid.length ? pingMs(valid[0],role) : -1;
+        return '<button type="button" class="region-entry' + (regionFilter===cc?' is-on':'') + '" data-region="'+escAttr(cc)+'" aria-pressed="'+(regionFilter===cc)+'" aria-label="筛选 '+escAttr(cc)+' 节点"><span class="region-code">'+escAttr(cc)+'</span><span class="region-identity"><strong>'+escAttr(ProbeAdapt.COUNTRY_NAMES[cc]||'未知地区')+'</strong><small>'+list.length+' 个节点</small></span><span class="region-reading '+(ms>=0&&ms<80?'is-fast':'')+'">'+(ms<0?'—':ms)+'<small>'+(ms<0?'':'ms')+'</small></span><span class="region-track"><i style="width:'+(ms<0?0:Math.min(100,ms/2))+'%"></i></span></button>';
+      }).join('')+'</div>';
     }
-    return (
-      '<section class="home-globe" aria-label="节点地球">' +
-        '<div class="atlas">' +
-          '<svg viewBox="0 0 420 240" preserveAspectRatio="xMidYMid meet">' +
-            globeMarkup() +
-          "</svg>" +
-        "</div>" +
-        '<aside class="atlas-side">' + sideGroup("line", "线路") + sideGroup("land", "落地") + "</aside>" +
-      "</section>"
-    );
-  }
-
-  function paintGlobe() {
-    const svg = main.querySelector(".atlas svg");
-    if (svg) svg.innerHTML = globeMarkup();
-  }
-
-  function onGlobeDown(ev) {
-    const atlas = ev.target.closest(".atlas");
-    if (!atlas || ev.button) return;
-    globeDrag = {
-      id: ev.pointerId,
-      x: ev.clientX,
-      y: ev.clientY,
-      lon: globeLon,
-      lat: globeLat,
-      moved: false,
-    };
-    atlas.classList.add("is-drag");
-    try { atlas.setPointerCapture(ev.pointerId); } catch (e) {}
-  }
-
-  function onGlobeMove(ev) {
-    if (!globeDrag || ev.pointerId !== globeDrag.id) return;
-    const dx = ev.clientX - globeDrag.x;
-    const dy = ev.clientY - globeDrag.y;
-    if (!globeDrag.moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
-    globeDrag.moved = true;
-    ev.preventDefault();
-    globeLon = wrapLon(globeDrag.lon - dx * 0.48);
-    globeLat = Math.max(-78, Math.min(78, globeDrag.lat + dy * 0.36));
-    paintGlobe();
-  }
-
-  function onGlobeUp(ev) {
-    if (!globeDrag || ev.pointerId !== globeDrag.id) return;
-    const atlas = main.querySelector(".atlas");
-    if (atlas) {
-      atlas.classList.remove("is-drag");
-      try { atlas.releasePointerCapture(ev.pointerId); } catch (e) {}
-    }
-    if (globeDrag.moved) globeSkipClick = true;
-    globeDrag = null;
+    return '<section class="home-globe observatory" aria-label="节点地球"><div class="atlas" data-canvas-ready="true"><div class="atlas-register" aria-hidden="true"><span>ORTHOGRAPHIC</span><span>01 / '+String(countries.size).padStart(2,'0')+'</span></div><canvas class="globe-canvas" tabindex="0" aria-label="节点地球，可使用方向键旋转，Enter 打开节点" aria-keyshortcuts="ArrowLeft ArrowRight ArrowUp ArrowDown Enter"></canvas><div class="atlas-bottom"><span class="globe-caption"></span><div class="globe-controls"><button type="button" data-globe-control="out" aria-label="缩小地球">−</button><button type="button" data-globe-control="reset" aria-label="复位地球">⟲</button><button type="button" data-globe-control="in" aria-label="放大地球">＋</button></div></div></div><aside class="atlas-side"><div class="regions-heading"><span class="instrument-label">REGIONS</span><strong>'+countries.size+'<small> 个地区</small></strong></div>'+group('line','线路')+group('land','落地')+'</aside></section>';
   }
 
   function hideWindow() {
+    const wasOpen = !overlay.hidden;
     overlay.hidden = true;
+    document.querySelector(".shell").inert = false;
     document.body.classList.remove("is-locked");
     document.documentElement.classList.remove("is-locked");
     winBody.innerHTML = "";
+    if (wasOpen) { const el = (lastFocus && document.querySelector(lastFocus)) || document.querySelector(".command-trigger"); if (el) el.focus({ preventScroll: true }); }
   }
 
   function renderNetwork() {
     const servers = state.servers || [];
-    if (!servers.length) {
-      main.innerHTML = listEmpty();
-      return;
-    }
+    if (!servers.length) { main.innerHTML = listEmpty(); return; }
     if (!servers[netIndex]) netIndex = 0;
-    const s = servers[netIndex];
-    const targets = s.ping || [];
-    const chosen = netTarget === "all" ? null : targets.find(function (p) { return p.key === netTarget; });
-    const avgMs = chosen ? (chosen.current_ms >= 0 ? chosen.current_ms : -1) : ProbeAdapt.meanMs(targets);
-    const avgLoss = chosen ? (chosen.loss_pct >= 0 ? chosen.loss_pct : 0) : ProbeAdapt.meanLoss(targets);
-    const sparkSrc = chosen || ProbeAdapt.primaryPing(s) || targets[0];
+    const s = servers[netIndex], targets = s.ping || [];
+    if (netTarget !== "all" && !targets.some(p => p.key === netTarget)) netTarget = "all";
+    const selected = netTarget === "all" ? targets : targets.filter(p => p.key === netTarget);
     const cacheKey = netIndex + ":" + range + ":" + (netTarget === "all" ? "avg" : netTarget);
     let vals = seriesCache[cacheKey] || [];
-    if (!vals.length && range === "1h" && sparkSrc && sparkSrc.buckets) vals = sparkSrc.buckets.map(function (b) { return b.ms; });
-    if (!vals.length && !liveMode && sparkSrc) {
-      vals = (ProbeDemo.pingSeries(s, range, sparkSrc.key).series || []).map(function (p) { return p.value; });
+    if (!vals.length && (range === "1h" || !liveMode)) {
+      const series = selected.map(p => !liveMode ? (ProbeDemo.pingSeries(s, range, p.key).series || []).map(v => v.value) : (p.buckets || []).map(b => b.ms));
+      const length = Math.max(0, ...series.map(v => v.length));
+      vals = Array.from({length}, (_,i) => {
+        const available = series.map(v => v[i - length + v.length]).filter(v => typeof v === "number" && Number.isFinite(v) && v >= 0);
+        return available.length ? Math.round(available.reduce((a,b)=>a+b,0)/available.length*10)/10 : -1;
+      });
     }
-    const buckets = (sparkSrc && sparkSrc.buckets ? sparkSrc.buckets : vals.map(function (ms) { return { ms: ms, loss: 0 }; })).slice(-12);
-    main.innerHTML =
-      '<section class="subpage">' +
-        "<p class='lead'>按服务器与探测目标查看延迟、丢包和时间桶。</p>" +
-        '<div class="pick" style="margin-bottom:16px">' +
-          servers.map(function (item, i) {
-            return '<button type="button" class="chip' + (i === netIndex ? " is-on" : "") + '" data-net="' + i + '">' + item.name + "</button>";
-          }).join("") +
-        "</div>" +
-        '<section class="kpi">' +
-          "<article><div class='lbl'>平均延迟</div><div class='val'>" + (avgMs < 0 ? "—" : avgMs + " ms") + "</div><div class='sub'>" + s.name + "</div></article>" +
-          "<article><div class='lbl'>平均丢包</div><div class='val'>" + (avgMs < 0 ? "—" : avgLoss.toFixed(2) + "%") + "</div><div class='sub'>所选目标</div></article>" +
-          "<article><div class='lbl'>时间范围</div><div class='val'>" + range + "</div><div class='sub'>1h / 6h / 24h</div></article>" +
-          "<article><div class='lbl'>探测目标</div><div class='val'>" + targets.length + "</div><div class='sub'>当前服务器配置</div></article>" +
-        "</section>" +
-        '<div class="panel-h" style="margin:16px 0 10px">' +
-          '<div class="pick">' +
-            '<button type="button" class="chip' + (netTarget === "all" ? " is-on" : "") + '" data-nett="all">全部平均</button>' +
-            targets.map(function (p) {
-              return '<button type="button" class="chip' + (netTarget === p.key ? " is-on" : "") + '" data-nett="' + p.key + '">' + p.label + "</button>";
-            }).join("") +
-          "</div>" +
-          '<div class="seg">' +
-            ["1h", "6h", "24h"].map(function (k) {
-              return '<button type="button" data-range="' + k + '" class="' + (range === k ? "is-on" : "") + '">' + k + "</button>";
-            }).join("") +
-          "</div>" +
-        "</div>" +
-        '<div class="chart-fill" style="height:220px">' + ProbeCharts.spark(vals, { w: 960, h: 200, color: cssVar("--ink", "#d5d0c4"), tips: pingTips(vals, range === "24h" ? 30 : range === "6h" ? 10 : 5) }) + "</div>" +
-        '<div class="bucket-strip" style="margin-top:14px">' +
-          buckets.map(function (b, i) {
-            const label = b.t ? new Date(b.t * 1000).toTimeString().slice(0, 5) : String(i + 1);
-            return "<article><div class='lbl'>" + label + "</div><div class='val' style='font-size:16px'>" + (b.ms < 0 ? "—" : b.ms + " ms") + "</div><div class='hero-sub'>丢包 " + (b.loss != null && b.loss >= 0 ? b.loss.toFixed(1) + "%" : "—") + "</div></article>";
-          }).join("") +
-        "</div>" +
-      "</section>" + cycleBlock();
+    main.innerHTML = ProbeConsole.network({servers, index:netIndex, target:netTarget, range, values:vals});
   }
 
   function renderResource() {
     const servers = state.servers || [];
-    const last7 = ProbeAdapt.lastDaysAcross(servers, 7);
-    const monthCostVal = monthCost();
-    const ranked = servers.slice().sort(function (a, b) {
-      return pct(b.traffic_used, b.traffic_limit) - pct(a.traffic_used, a.traffic_limit);
-    });
-    const heat = servers.slice().sort(function (a, b) { return (b.cpu_pct || 0) - (a.cpu_pct || 0); });
-    const soon = servers.slice().sort(function (a, b) { return (a.expires_at || "9").localeCompare(b.expires_at || "9"); }).slice(0, 6);
-    const t = totals();
-    const on = function (key) { return !liveMode || state[key] !== false; };
-    let body = '<section class="subpage"><p class="lead">' + t.online + "/" + t.all + " 台在线。</p>";
-    body += '<section class="kpi">' +
-      "<article><div class='lbl'>月均成本</div><div class='val'>¥" + monthCostVal.toFixed(0) + "</div><div class='sub'>按续费折算</div></article>" +
-      "<article><div class='lbl'>年化预算</div><div class='val'>¥" + (monthCostVal * 12).toFixed(0) + "</div><div class='sub'>官方汇率</div></article>" +
-      "<article><div class='lbl'>周期用量</div><div class='val'>" + fmtBytes(t.used, 1) + "</div><div class='sub'>限额 " + fmtBytes(t.limit, 2) + "</div></article>" +
-      "<article><div class='lbl'>有限额</div><div class='val'>" + servers.filter(function (s) { return s.traffic_limit; }).length + "</div><div class='sub'>台服务器</div></article></section>";
-    if (on("show_traffic_7d") || on("show_traffic_quota")) {
-      body += '<section class="panels" style="margin-top:16px">';
-      if (on("show_traffic_7d")) {
-        body += '<div class="panel"><div class="panel-h"><h3>近 7 日上下行</h3><span class="hero-sub">金 = 上行　灰 = 下行</span></div>' +
-          ProbeCharts.stacked(last7, { w: 520, h: 140, tips: trafficTips(last7) }) + "</div>";
-      }
-      if (on("show_traffic_quota")) {
-        body += '<div class="panel"><div class="panel-h"><h3>额度使用率</h3></div>' +
-          ranked.slice(0, 5).map(function (s) {
-            const p = pct(s.traffic_used, s.traffic_limit);
-            return '<div class="rank" style="margin:10px 0"><div class="reg"><span>' + s.name + "</span><b>" + Math.round(p) + "%</b></div><i style='--p:" + p + "%'></i></div>";
-          }).join("") + "</div>";
-      }
-      body += "</section>";
-    }
-    if (on("show_resource_heatmap")) {
-      body += '<div class="panel" style="margin-top:16px"><div class="panel-h"><h3>资源压力</h3><span class="hero-sub">CPU · 内存 · 硬盘</span></div>' +
-        '<table class="heat"><thead><tr><th>服务器</th><th>CPU</th><th>内存</th><th>硬盘</th></tr></thead><tbody>' +
-        heat.map(function (s) {
-          return "<tr><td>" + s.name + "</td><td>" + Math.round(s.cpu_pct || 0) + "%<i class='bar'><i style='width:" + (s.cpu_pct || 0) + "%'></i></i></td><td>" +
-            Math.round(pct(s.mem_used, s.mem_total)) + "%</td><td>" + Math.round(pct(s.disk_used, s.disk_total)) + "%</td></tr>";
-        }).join("") + "</tbody></table></div>";
-    }
-    if (on("show_renewal_timeline")) {
-      body += '<div class="panel" style="margin-top:16px"><div class="panel-h"><h3>续费与到期</h3><span class="hero-sub">按到期日</span></div><div class="timeline">' +
-        soon.map(function (s) {
-          const days = s.expires_at ? Math.max(0, Math.round((new Date(s.expires_at) - new Date()) / 86400000)) : "—";
-          return "<article><div>" + (s.expires_at || "—") + "</div><b>" + s.name + "</b>" + days + " 天后　¥" + (s.renewal_price_cny || 0) + "</article>";
-        }).join("") + "</div></div>";
-    }
-    main.innerHTML = body + "</section>" + cycleBlock();
+    main.innerHTML = ProbeConsole.resource({servers, last7:ProbeAdapt.lastDaysAcross(servers,7), cost:monthCost(), settings:liveMode?state:{}});
   }
 
   function renderBoard(r) {
@@ -1426,13 +842,41 @@
   }
 
   function render() {
+    const persistentAtlas = main.querySelector(".atlas[data-canvas-ready]");
+    const active = document.activeElement;
+    const attrs = ["data-find", "data-order", "data-status", "data-sort", "data-view", "data-globe", "data-net", "data-nett", "data-range", "data-target", "data-index", "data-day", "data-resource-metric", "data-resource-order", "data-detail-tab", "data-matrix-node", "data-quick-compare", "data-scope-zoom", "data-scope-view"];
+    const attr = active && attrs.find(k => active.hasAttribute(k));
+    const value = attr ? active.getAttribute(attr) : null;
+    const pos = active && active.selectionStart;
+    renderContent();
+    const newAtlas = main.querySelector(".atlas");
+    if (newAtlas && window.ProbeGlobe) {
+      if (persistentAtlas) newAtlas.replaceWith(persistentAtlas);
+      ProbeGlobe.update(persistentAtlas || newAtlas, state.servers, { onSelect: openNode });
+      if (persistentAtlas && persistentAtlas.contains(active) && overlay.hidden) active.focus({ preventScroll: true });
+    }
+    if (window.ProbeWorkbench) ProbeWorkbench.sync({ servers: state.servers, openNode: openNode, fmtBytes: fmtBytes, fmtSpeed: fmtSpeed, pct: pct, primaryPing: primaryPing });
+    if (attr && !active.isConnected) {
+      const scope = overlay.hidden ? main : overlay;
+      const next = Array.from(scope.querySelectorAll("[" + attr + "]")).find(el => el.tagName === active.tagName && el.getAttribute(attr) === value);
+      if (next) { next.focus({ preventScroll: true }); if (attr === "data-scope-view") ProbeConsole.inspectSample(next, Number(active.dataset.sample || 0)); try { next.setSelectionRange(pos, pos); } catch (_) {} }
+    }
+    paintConnection();
+    if (window.ProbeFX) ProbeFX.enter(main, route().home + ":" + route().view);
+    ProbeConsole.enhance(overlay.hidden ? main : overlay, location.hash + ":" + netIndex + ":" + netTarget + ":" + range + ":" + ProbeConsole.metric + ":" + (overlay.querySelector("[data-detail-content]")?.dataset.detailContent || ""));
+  }
+
+  function renderContent() {
     const r = route();
     const params = new URLSearchParams(location.search);
     const demo = params.get("state");
     renderChrome(r);
 
     if (!liveMode && !forcedDemo()) {
-      main.innerHTML = "";
+      empty(loadState === "error" ? "暂时无法连接探针" : "正在获取节点状态", loadState === "error" ? "请检查网络连接，或稍后重试。" : "数据就绪后自动展示，请稍候。");
+      if (loadState === "error") main.querySelector(".state").insertAdjacentHTML("beforeend", '<button class="action-btn" type="button" data-retry>重新连接</button>');
+      main.querySelector(".state").setAttribute("role", "status");
+      main.querySelector(".state").setAttribute("aria-busy", loadState === "loading" ? "true" : "false");
       foot.innerHTML = "";
       hideWindow();
       return;
@@ -1459,14 +903,29 @@
   }
 
   function openNode(index, page) {
-    lastFocus = '[data-index="' + index + '"]';
+    ProbeConsole.resetDetail();
+    lastFocus = 'button[data-index="' + index + '"]';
     targetKey = "";
     range = "1h";
     go(viewHash(route().view || lastView, index, page || "overview"));
-    loadSeries(index);
+    loadSeries(index).then(function () { if (route().node === index) renderWindow(index); });
   }
 
   function onMainClick(ev) {
+    const matrix = ev.target.closest("[data-matrix-node]");
+    if (matrix) { netIndex = Number(matrix.dataset.matrixNode); netTarget = matrix.dataset.matrixTarget; render(); loadSeries(netIndex, netTarget).then(render); return; }
+    const region = ev.target.closest("[data-region]");
+    if (region) {
+      const cc = region.dataset.region;
+      regionFilter = regionFilter === cc ? "" : cc;
+      render();
+      if (regionFilter && window.ProbeGlobe) ProbeGlobe.aim(ProbeAdapt.COUNTRY_LL[regionFilter]);
+      return;
+    }
+    if (ev.target.closest("[data-retry]")) { refreshData(); return; }
+    if (ev.target.closest("[data-reset]")) { findQ = ""; statusFilter = "all"; regionFilter = ""; render(); main.querySelector("[data-find]").focus({ preventScroll: true }); return; }
+    const status = ev.target.closest("[data-status]");
+    if (status) { statusFilter = status.dataset.status; render(); return; }
     const dayBtn = ev.target.closest("[data-day]");
     if (dayBtn) {
       pulseDay = Number(dayBtn.getAttribute("data-day"));
@@ -1509,6 +968,7 @@
     }
     const viewBtn = ev.target.closest("[data-view]");
     if (viewBtn) {
+      localStorage.setItem("mmwx-view", viewBtn.getAttribute("data-view"));
       go(viewHash(viewBtn.getAttribute("data-view"), null, null, "nodes"));
       return;
     }
@@ -1518,15 +978,6 @@
       localStorage.setItem("mmwx-globe", showGlobe ? "1" : "0");
       render();
       return;
-    }
-    const aim = ev.target.closest("[data-aim]");
-    if (aim) {
-      lookAtCountry(aim.getAttribute("data-aim"));
-      return;
-    }
-    if (globeSkipClick) {
-      globeSkipClick = false;
-      if (ev.target.closest(".atlas")) return;
     }
     const item = ev.target.closest("[data-index]");
     if (!item) return;
@@ -1554,6 +1005,19 @@
   }
 
   function onKey(ev) {
+    if (document.getElementById("workbench-dialog")?.open) return;
+    if (ev.key === "Tab" && !overlay.hidden) {
+      const els = Array.from(overlay.querySelectorAll('button:not([disabled]), a[href], input, select, [tabindex="0"]')).filter(el => el.getClientRects().length);
+      const first = els[0], last = els[els.length - 1];
+      if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+      else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+      return;
+    }
+    if (ev.key === "/" && overlay.hidden && !/INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) {
+      const input = main.querySelector("[data-find]");
+      if (input) { ev.preventDefault(); input.focus(); }
+      return;
+    }
     if (ev.key === "Escape" && route().node != null) {
       closeWindow();
       return;
@@ -1576,15 +1040,18 @@
     const btn = ev.target.closest("[data-home]");
     if (!btn) return;
     const sec = btn.getAttribute("data-home");
-    if (sec === "nodes") go(viewHash(lastView || "grid", null, null, "nodes"));
+    if (sec === "nodes") go(viewHash(lastView || "column", null, null, "nodes"));
     else go(viewHash(lastView, null, null, sec));
   });
   document.getElementById("win-close").addEventListener("click", closeWindow);
   document.getElementById("win-back").addEventListener("click", closeWindow);
   overlay.addEventListener("click", onWindowClick);
   main.addEventListener("click", onMainClick);
+  main.addEventListener("change", function (ev) { if (ev.target.matches("[data-order]")) { sortKey = ev.target.value; sortDir = 1; render(); } });
+  main.addEventListener("compositionstart", function () { composing = true; });
+  main.addEventListener("compositionend", function (ev) { composing = false; ev.target.dispatchEvent(new Event("input", { bubbles: true })); });
   main.addEventListener("input", function (ev) {
-    if (!ev.target.closest("[data-find]")) return;
+    if (composing || !ev.target.closest("[data-find]")) return;
     findQ = ev.target.value;
     const pos = ev.target.selectionStart;
     render();
@@ -1594,22 +1061,8 @@
       try { el.setSelectionRange(pos, pos); } catch (e) {}
     }
   });
-  main.addEventListener("pointerdown", onGlobeDown);
-  main.addEventListener("pointermove", onGlobeMove);
-  main.addEventListener("pointerup", onGlobeUp);
-  main.addEventListener("pointercancel", onGlobeUp);
-  main.addEventListener("dblclick", function (ev) {
-    if (!ev.target.closest(".atlas")) return;
-    globeLon = 80;
-    globeLat = 30;
-    paintGlobe();
-  });
   window.addEventListener("hashchange", render);
   window.addEventListener("keydown", onKey);
-  document.addEventListener("mmwx-fx", function () {
-    if (main.querySelector(".atlas svg")) paintGlobe();
-  });
-
   function rebuildPulse() {
     const servers = state.servers || [];
     const byDate = {};
@@ -1647,7 +1100,7 @@
   }
 
   function applyLive(payload) {
-    if (!payload || payload.enabled === false) return;
+    if (!payload) return;
     var theme = payload.appearance && payload.appearance.theme;
     var builtin = { follow: 1, flat: 1, pixel: 1, anime: 1, premium: 1 };
     if (theme && builtin[theme] && location.pathname.indexOf("/line-grid") === 0) {
@@ -1656,6 +1109,8 @@
     }
     state = ProbeAdapt.normalizePayload(payload);
     liveMode = true;
+    loadState = "ready";
+    lastUpdated = new Date();
     if (state.title) {
       document.title = state.title;
     }
@@ -1663,12 +1118,11 @@
       showGlobe = false;
     }
     rebuildPulse();
-    if (globeDrag) return;
+    if ((window.ProbeGlobe && ProbeGlobe.dragging) || composing) return;
     const y = window.scrollY;
     const r = route();
     render();
     window.scrollTo(0, y);
-    if (r.node != null) renderWindow(r.node);
   }
 
   function loadSeries(index, tgt) {
@@ -1682,7 +1136,8 @@
   }
 
   function tickDemo() {
-    if (liveMode || globeDrag) return;
+    if (!forcedDemo() || liveMode || (window.ProbeGlobe && ProbeGlobe.dragging) || composing) return;
+    lastUpdated = new Date();
     (state.servers || []).forEach(function (s, i) {
       const src = ProbeDemo.payload.servers[i];
       if (!src || !s.online) return;
@@ -1752,37 +1207,10 @@
   setInterval(tickDemo, 5000);
   setInterval(renderFoot, 1000);
 
-  (function startGlobeIdle() {
-    let last = 0;
-    function frame(t) {
-      requestAnimationFrame(frame);
-      if (t - last < 70) return;
-      last = t;
-      if (!showGlobe || globeDrag || document.hidden) return;
-      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-      if (route().home !== "nodes") return;
-      if (overlay && !overlay.hidden) return;
-      if (!main.querySelector(".atlas svg")) return;
-      globeLon = wrapLon(globeLon + 0.18);
-      paintGlobe();
-    }
-    requestAnimationFrame(frame);
-  })();
-
+  ProbeConsole.configure({fmtBytes, fmtSpeed, fmtDays, trafficTips, cycles:CYCLE, carriers:CARRIER, range:()=>range, render, openNode});
+  document.getElementById("refresh-data").addEventListener("click", refreshData);
   render();
   if (forcedDemo()) return;
-  ProbeAPI.fetchServers().then(function (payload) {
-    if (payload && payload.enabled === false) {
-      state = ProbeAdapt.normalizePayload(payload);
-      render();
-      return;
-    }
-    if (!payload || !payload.servers) {
-      empty("探针暂时无法访问", "接口没有返回节点数据。");
-      foot.innerHTML = "";
-      return;
-    }
-    applyLive(payload);
-    ProbeAPI.connectWS(applyLive);
-  });
+  refreshData();
+  setInterval(function () { if (!document.hidden && !composing && (!lastUpdated || Date.now() - lastUpdated.getTime() > 25000)) refreshData(); }, 30000);
 })();

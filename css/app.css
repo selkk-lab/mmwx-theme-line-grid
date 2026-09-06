@@ -1,9 +1,9 @@
 :root {
   --globe-rim: rgba(8, 8, 8, 0.36);
   --globe-tint: 0.15;
-  --sans: "Instrument Sans", "Source Han Sans SC", "Noto Sans SC", sans-serif;
-  --serif: "Instrument Serif", "Songti SC", "Noto Serif SC", serif;
-  --mono: "IBM Plex Mono", "Source Han Mono SC", ui-monospace, monospace;
+  --sans: "Space Grotesk", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --serif: var(--sans);
+  --mono: "JetBrains Mono", "Noto Sans SC", ui-monospace, monospace;
   --pad: clamp(20px, 3.4vw, 48px);
   --max: 1360px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -55,7 +55,8 @@ html, body {
   background: var(--void);
   color: var(--ink);
   font-family: var(--sans);
-  font-feature-settings: "ss01" 1, "cv11" 1;
+  font-kerning: normal;
+  font-variant-numeric: lining-nums tabular-nums;
   text-rendering: optimizeLegibility;
 }
 

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Komari Monitor</title>
-  <meta name="description" content="A simple server monitor tool.">
+  <title>line-grid · 节点状态</title>
+  <meta name="description" content="节点状态、网络延迟与资源用量，一处掌握。">
   <script>
     (function () {
       var t = localStorage.getItem("mmwx-theme") === "light" ? "light" : "dark";
@@ -17,21 +17,27 @@
       document.documentElement.setAttribute("data-fx-expose", fx.expose);
     })();
   </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/app.css?v=20260902f">
+  <link rel="preload" href="fonts/spacegrotesk-98a0d4ac28a1.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/jetbrainsmono-cc27b3047125.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/fonts.css?v=20260906type1">
+  <link rel="icon" type="image/svg+xml" href="img/favicon-globe.svg">
+  <link rel="stylesheet" href="css/app.css?v=20260906type1">
+  <link rel="stylesheet" href="css/usability.css?v=20260906type1">
+  <link rel="stylesheet" href="css/effects.css?v=20260906type1">
+  <link rel="stylesheet" href="css/observatory.css?v=20260906type1">
+  <link rel="stylesheet" href="css/console.css?v=20260906type1">
 </head>
 <body>
   <div class="fx-grain" aria-hidden="true"></div>
   <a class="skip" href="#main">跳到内容</a>
   <div class="shell">
+    <div class="masthead"><a class="brand" href="#/column" aria-label="line-grid 首页"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 6.5h14M5 17.5h14"/></svg><span>line-grid<span class="brand-period">.</span></span></a><span class="masthead-line"></span><span class="edition">INFRASTRUCTURE OBSERVATORY</span><button class="command-trigger" type="button" data-command-open aria-label="快捷搜索">⌕ <span>快速跳转</span><kbd>Ctrl K</kbd></button></div>
     <header class="top">
       <div>
-        <p class="eyebrow">Node / Infrastructure · <span class="live"><i></i>实时</span></p>
+        <p class="eyebrow">Node / Infrastructure · <span class="live" id="connection-status" role="status">正在连接</span></p>
         <h1 id="page-title">节点状态</h1>
       </div>
-      <div class="top-tools">
+      <div class="top-tools"><button id="refresh-data" class="refresh-btn" type="button">↻ 刷新</button>
         <button class="icon-btn" id="theme-toggle" type="button" aria-label="切换日间模式" title="日间" aria-pressed="false">
           <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.3 3.3l1.3 1.3M11.4 11.4l1.3 1.3M3.3 12.7l1.3-1.3M11.4 4.6l1.3-1.3"/></svg>
         </button>
@@ -53,20 +59,23 @@
           <p class="window-kicker" id="win-kicker">Node / Detail</p>
           <h2 id="win-title">节点</h2>
         </div>
-        <button class="window-x" id="win-close" type="button" aria-label="关闭">×</button>
+        <div class="stage-tools"><div class="node-stepping"><button type="button" data-node-step="-1" aria-label="上一个节点">←</button><button type="button" data-node-step="1" aria-label="下一个节点">→</button></div><button type="button" id="compare-node" aria-pressed="false">加入对比 ＋</button><button class="window-x" id="win-close" type="button" aria-label="关闭">×</button></div>
       </header>
       <div class="stage-body" id="win-body"></div>
     </section>
   </div>
   <div id="chart-tip" hidden></div>
-  <script src="js/fx.js?v=20260902f"></script>
-  <script src="js/config.js?v=20260902f"></script>
-  <script src="js/data.js?v=20260902f"></script>
-  <script src="js/adapt.js?v=20260902f"></script>
-  <script src="js/land.js?v=20260902f"></script>
-  <script src="js/komari.js?v=20260902f"></script>
-  <script src="js/api.js?v=20260902f"></script>
-  <script src="js/charts.js?v=20260902f"></script>
-  <script src="js/app.js?v=20260902f"></script>
+  <script src="js/fx.js?v=20260906type1"></script>
+  <script src="js/config.js?v=20260906type1"></script>
+  <script src="js/data.js?v=20260906type1"></script>
+  <script src="js/adapt.js?v=20260906type1"></script>
+  <script src="js/land.js?v=20260906type1"></script>
+  <script src="js/komari.js?v=20260906type1"></script>
+  <script src="js/api.js?v=20260906type1"></script>
+  <script src="js/charts.js?v=20260906type1"></script>
+  <script src="js/observatory.js?v=20260906type1"></script>
+  <script src="js/workbench.js?v=20260906type1"></script>
+  <script src="js/console.js?v=20260906type1"></script>
+  <script src="js/app.js?v=20260906type1"></script>
 </body>
 </html>

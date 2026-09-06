@@ -4,6 +4,19 @@
     grain: "1",
     count: "1",
     expose: "1",
+    grid: "0",
+    pulse: "1",
+    flow: "1",
+    hover: "1",
+    frame: "1",
+    glow: "1",
+    entrance: "1",
+    rotate: "1",
+    sweep: "0",
+    trace: "1",
+    rise: "1",
+    scan: "1",
+    depth: "1",
   };
   const TONE_KEY = "mmwx-fx-tone";
   const GRAIN_KEY = "mmwx-fx-grain-depth";
@@ -20,9 +33,13 @@
   let grainDepth = loadGrain();
   let globeTint = loadTint();
   let counted = false;
+  let entranceKey = "";
+  let entranceAnimations = [];
 
   function load() {
     const out = Object.assign({}, DEFAULTS);
+    // Public pages use the approved release preset; local experiments stay local.
+    if (!localHost()) return out;
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return out;
@@ -49,7 +66,7 @@
     try {
       const parsed = JSON.parse(localStorage.getItem(TONE_KEY) || "{}");
       if (/^#[0-9a-f]{6}$/i.test(parsed.night || "")) out.night = parsed.night.toLowerCase();
-      if (/^#[0-9a-f]{6}$/i.test(parsed.day || "")) out.day = parsed.day.toLowerCase();
+      if (/^#[0-9a-f]{6}$/i.test(parsed.day || "") && parsed.day.toLowerCase() !== "#f1eee6") out.day = parsed.day.toLowerCase();
     } catch (e) {}
     return out;
   }
@@ -175,11 +192,16 @@
     const root = document.documentElement;
     root.setAttribute("data-fx-grain", flags.grain);
     root.setAttribute("data-fx-count", flags.count);
-    root.setAttribute("data-fx-expose", flags.expose);
+    Object.keys(flags).forEach(function (key) { root.setAttribute("data-fx-" + key, flags[key]); });
     applyTone();
     applyGrain();
     applyTint();
     syncGrainSlider(document.getElementById("fx-panel"));
+    document.querySelectorAll("#fx-panel [data-fx]").forEach(function (el) { el.checked = on(el.dataset.fx); });
+    const total = Object.keys(flags).filter(on).length;
+    const counter = document.getElementById("fx-counter");
+    if (counter) counter.textContent = total + " / " + Object.keys(flags).length;
+    if (!on("entrance")) { entranceAnimations.forEach(function (a) { a.cancel(); }); entranceAnimations = []; }
   }
 
   function set(name, value) {
@@ -187,6 +209,7 @@
     save();
     apply();
     document.dispatchEvent(new CustomEvent("mmwx-fx", { detail: name }));
+    if (name === "entrance" && on("entrance")) { entranceKey = ""; enter(document.getElementById("main"), "preview"); }
     if (name === "count" && flags.count === "1") {
       counted = false;
       tickCounts(document.getElementById("main"));
@@ -209,6 +232,8 @@
       const t0 = performance.now();
       const dur = 740;
       function step(now) {
+        if (!el.isConnected) return;
+        if (!on("count") || reduce.matches) { el.textContent = text; return; }
         const p = Math.min(1, (now - t0) / dur);
         const e = 1 - Math.pow(1 - p, 3);
         const n = target * e;
@@ -220,6 +245,37 @@
       requestAnimationFrame(step);
     });
   }
+
+  function enter(root, key) {
+    if (!root || !on("entrance") || reduce.matches || document.hidden) return;
+    if (entranceKey === key) return;
+    entranceKey = key;
+    entranceAnimations.forEach(function (a) { a.cancel(); });
+    entranceAnimations = Array.from(root.children).slice(0, 5).map(function (el, i) {
+      return el.animate([{ opacity: .35, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 420, delay: i * 45, easing: "cubic-bezier(.22,1,.36,1)" });
+    });
+  }
+
+  let hoverCell = null;
+  let hoverFrame = 0;
+  document.addEventListener("pointermove", function (ev) {
+    if (!on("hover") || ev.pointerType === "touch") return;
+    const cell = ev.target.closest && ev.target.closest(".row:not(.row-h), .cell, .slab, .fleet article");
+    if (hoverCell && hoverCell !== cell) hoverCell.classList.remove("fx-hovering");
+    hoverCell = cell;
+    cancelAnimationFrame(hoverFrame);
+    if (!cell) return;
+    hoverFrame = requestAnimationFrame(function () {
+      if (!cell.isConnected) return;
+      const rect = cell.getBoundingClientRect();
+      cell.style.setProperty("--fx-x", (ev.clientX - rect.left) + "px");
+      cell.style.setProperty("--fx-y", (ev.clientY - rect.top) + "px");
+      cell.classList.add("fx-hovering");
+    });
+  }, { passive: true });
+  document.addEventListener("pointerout", function (ev) { if (!ev.relatedTarget && hoverCell) { hoverCell.classList.remove("fx-hovering"); cancelAnimationFrame(hoverFrame); } });
+  document.addEventListener("visibilitychange", function () { document.documentElement.toggleAttribute("data-fx-paused", document.hidden); });
+  reduce.addEventListener("change", function () { if (reduce.matches) entranceAnimations.forEach(function (a) { a.cancel(); }); });
 
   function expose(run) {
     run();
@@ -234,20 +290,43 @@
     if (document.getElementById("fx-panel")) return;
     const box = document.createElement("aside");
     box.id = "fx-panel";
-    box.setAttribute("aria-label", "本地试效果");
+    box.setAttribute("aria-label", "临时效果面板");
+    box.hidden = new URLSearchParams(location.search).get("fx") !== "1";
+    const launcher = document.createElement("button");
+    launcher.id = "fx-launcher";
+    launcher.type = "button";
+    launcher.setAttribute("aria-controls", "fx-panel");
+    launcher.setAttribute("aria-expanded", String(!box.hidden));
+    launcher.innerHTML = '<svg viewBox="0 0 18 18" aria-hidden="true"><path d="M3 4h12M3 9h12M3 14h12"/><circle cx="6" cy="4" r="2"/><circle cx="12" cy="9" r="2"/><circle cx="7" cy="14" r="2"/></svg><span>效果试验</span><small>临时</small>';
+    document.body.appendChild(launcher);
+    function toggle(open) { box.hidden = !open; launcher.setAttribute("aria-expanded", String(open)); }
+    launcher.addEventListener("click", function () { toggle(box.hidden); });
     box.innerHTML =
-      '<header><span>本地试效果</span><button type="button" class="fx-min" aria-label="收起">–</button></header>' +
-      '<div class="fx-body">' +
-        row("grain", "纸纹", flags.grain === "1") +
-        row("count", "数字进场", flags.count === "1") +
-        row("expose", "日夜间曝光", flags.expose === "1") +
-        toneRow("night", "夜间底") +
-        toneRow("day", "日间底") +
-        grainRow() +
-        tintRow() +
-        '<button type="button" class="fx-reset">亮度重置</button>' +
-      "</div>";
+      '<header><span>效果试验 <small id="fx-counter"></small></span><button type="button" class="fx-min" aria-label="收起效果面板">×</button></header>' +
+      '<div class="fx-body"><div class="fx-presets"><button type="button" data-preset="recommended">推荐</button><button type="button" data-preset="all">全开</button><button type="button" data-preset="none">全关</button></div>' +
+      '<p class="fx-section">材质 / 线条</p>' +
+      row("grain", "纸张颗粒", on("grain")) + row("grid", "细线网格", on("grid")) +
+      row("frame", "刻度边角", on("frame")) + row("hover", "悬停微光", on("hover")) + row("glow", "曲线微光", on("glow")) +
+      '<p class="fx-section">地球 / 动态</p>' +
+      row("rotate", "地球自转", on("rotate")) + row("sweep", "经线扫描", on("sweep")) + row("flow", "连线流动", on("flow")) +
+      row("pulse", "节点呼吸", on("pulse")) + row("entrance", "轻量入场", on("entrance")) + row("count", "数字进场", on("count")) + row("expose", "日夜渐变", on("expose")) +
+      '<p class="fx-section">观测工作台 / 新增</p>' + row("trace", "曲线描绘", on("trace")) + row("rise", "容量展开", on("rise")) + row("scan", "信号扫描", on("scan")) + row("depth", "立体悬停", on("depth")) +
+      '<details class="fx-tuning"><summary>强度与底色</summary>' + toneRow("night", "夜间底") + toneRow("day", "日间底") + grainRow() + tintRow() + '<button type="button" class="fx-reset">恢复原版底色</button></details>' +
+      '<p class="fx-local-note">仅本机试效果，选择自动记住。</p></div>';
     document.body.appendChild(box);
+    apply();
+    box.addEventListener("click", function (ev) {
+      const preset = ev.target.closest("[data-preset]");
+      if (!preset) return;
+      Object.keys(flags).forEach(function (key) { flags[key] = preset.dataset.preset === "all" ? "1" : preset.dataset.preset === "none" ? "0" : DEFAULTS[key]; });
+      counted = false;
+      entranceKey = "";
+      save(); apply();
+      document.dispatchEvent(new CustomEvent("mmwx-fx"));
+      tickCounts(document.getElementById("main"));
+      enter(document.getElementById("main"), "preview");
+    });
+    box.addEventListener("keydown", function (ev) { if (ev.key === "Escape") { ev.stopPropagation(); toggle(false); launcher.focus(); } });
     box.addEventListener("change", function (ev) {
       const el = ev.target;
       const name = el.getAttribute("data-fx");
@@ -289,7 +368,8 @@
       requestAnimationFrame(function () { root.style.transition = prev; });
     });
     box.querySelector(".fx-min").addEventListener("click", function () {
-      box.classList.toggle("is-min");
+      toggle(false);
+      launcher.focus();
     });
     box.querySelector(".fx-reset").addEventListener("click", function () {
       tones.night = TONE.night.hex;
@@ -364,6 +444,7 @@
     apply: apply,
     set: set,
     tickCounts: tickCounts,
+    enter: enter,
     expose: expose,
     flags: flags,
     tones: tones,

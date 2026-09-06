@@ -30,13 +30,15 @@
 
   function getJSON(path) {
     if (!base() && location.protocol === "file:") return Promise.resolve(null);
-    return fetch(join(path), { headers: headers(), credentials: "omit", cache: "no-store" })
+    const controller = new AbortController();
+    const timeout = setTimeout(function () { controller.abort(); }, 8000);
+    return fetch(join(path), { headers: headers(), credentials: "omit", cache: "no-store", signal: controller.signal })
       .then(function (res) {
         const type = res.headers.get("content-type") || "";
         if (!res.ok || type.indexOf("json") < 0) return null;
         return res.json();
       })
-      .catch(function () { return null; });
+      .catch(function () { return null; }).finally(function () { clearTimeout(timeout); });
   }
 
   function firstJSON(paths) {

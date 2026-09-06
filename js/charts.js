@@ -55,8 +55,8 @@
       if (m <= 500) return 500;
       return Math.ceil(m / 100) * 100;
     }
-    const min = 0;
-    const max = niceMax(dataMax);
+    const min = Number.isFinite(opt.min) ? opt.min : 0;
+    const max = Number.isFinite(opt.max) && opt.max > min ? opt.max : niceMax(dataMax);
     const span = Math.max(1, max - min);
     const padX = 2;
     const padY = 6;

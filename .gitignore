@@ -3,3 +3,6 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+artifacts/
+line-grid-komari.zip
+__pycache__/
