@@ -1,10 +1,14 @@
 /* Temporary local effect lab. Treatments share the existing ink and paper palette. */
-@keyframes fx-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 transparent; opacity: .8; }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--live) 14%, transparent); opacity: 1; }
+/* The halo scales a pseudo-element instead of animating box-shadow, so breathing never repaints. */
+@keyframes fx-breathe { 0%, 100% { opacity: .8; } 50% { opacity: 1; } }
+@keyframes fx-breathe-halo { 0%, 100% { opacity: 0; transform: scale(.467); } 50% { opacity: 1; transform: scale(1); } }
+.dot { position: relative; }
+.dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; background: color-mix(in srgb, var(--live) 14%, transparent); opacity: 0; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  html[data-fx-pulse="1"] .dot:not(.is-off) { box-shadow: none; animation: fx-breathe 3.6s ease-in-out infinite; }
+  html[data-fx-pulse="1"] .dot:not(.is-off)::after { animation: fx-breathe-halo 3.6s ease-in-out infinite; }
 }
-html[data-fx-pulse="1"] .dot:not(.is-off) { animation: fx-breathe 3.6s ease-in-out infinite; }
-html[data-fx-pulse="0"] .dot { animation: none; }
+html[data-fx-paused] .dot::after { animation-play-state: paused; }
 html[data-fx-grid="1"] .home-globe {
   background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
   background-size: 32px 32px;

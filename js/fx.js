@@ -251,8 +251,8 @@
     if (entranceKey === key) return;
     entranceKey = key;
     entranceAnimations.forEach(function (a) { a.cancel(); });
-    entranceAnimations = Array.from(root.children).slice(0, 5).map(function (el, i) {
-      return el.animate([{ opacity: .35, transform: "translateY(8px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 420, delay: i * 45, easing: "cubic-bezier(.22,1,.36,1)" });
+    entranceAnimations = Array.from(root.children).slice(0, 8).map(function (el, i) {
+      return el.animate([{ opacity: 0, transform: "translateY(12px)" }, { opacity: 1, transform: "translateY(0)" }], { duration: 520, delay: i * 55, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" });
     });
   }
 

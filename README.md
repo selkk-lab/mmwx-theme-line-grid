@@ -47,6 +47,14 @@ npx --yes serve .
 
 浏览器打开提示的地址，并加上 `?demo=1` 查看演示数据。未加演示参数时会连接同源探针接口，失败后显示重试入口，不会回退为假节点。
 
+想在本地直接看自己的真实节点（Node.js 18+，无需安装依赖）：
+
+```bash
+node scripts/dev-server.mjs --upstream https://你的探针站
+```
+
+打开 `http://127.0.0.1:8780/`。页面和改动来自本目录，`/api/*`（含 WebSocket 实时推送）转发到已部署的探针站，不需要主控地址或密钥。`?demo=1` 仍是演示数据。
+
 ### 3. 页面上的开关
 
 - 右上角太阳 / 月亮：日间、夜间，选择保存在当前浏览器，不会上传
@@ -54,6 +62,8 @@ npx --yes serve .
 - 地球可按住拖转；点节点打开详情窗口
 - 地区读数联动筛选与地球定位；地球右下角提供缩放和复位
 - Ctrl / Cmd K 快捷搜索节点；详情支持前后切换和最多三台节点对比
+- 每页标题下一句话说明现状；首页「需要留意」汇总离线、超额、临近续费等，点击直达节点
+- 主控开启对应开关时，网络状况显示转发链路，资源概况显示流量热点
 
 ### 4. 本地设计预览与验证
 
@@ -79,9 +89,13 @@ python scripts/test-local-ux.py
 python scripts/test-observatory.py
 python scripts/test-console.py
 python scripts/test-typography.py
+python scripts/test-live-stream.py
+python scripts/test-desk.py
 ```
 
-测试只使用本地演示与拦截的接口样本；结果与截图保存在 `artifacts/`，不提交到仓库。本版本 72 项本地检查通过，涵盖交互、响应式布局、字体实际渲染、默认视图与接口异常。
+测试只使用本地演示与拦截的接口样本；结果与截图保存在 `artifacts/`，不提交到仓库。本版本 91 项本地检查通过，涵盖交互、响应式布局、字体实际渲染、默认视图、接口异常、实时推送与断线重连，以及需要留意、转发链路、流量热点、额度估算和节点系统曲线。
+
+`python scripts/bench-live.py` 用 19 台合成节点和每 5 秒一次的模拟推送测量浏览器主线程开销，`--fx pulse=0` 等参数可单独关闭某项效果做对照。
 
 ## Komari 专版
 

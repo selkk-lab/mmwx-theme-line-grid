@@ -603,19 +603,10 @@ html[data-theme="light"][data-fx-grain="1"] .fx-grain { opacity: var(--fx-grain-
   flex: none;
 }
 
-.dot:not(.is-off) {
-  animation: pulse-dot 2.8s ease-in-out infinite;
-}
-
 .dot.is-off {
   background: var(--down);
   box-shadow: none;
   animation: none;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(143, 166, 118, 0.14); }
-  50% { box-shadow: 0 0 0 6px rgba(143, 166, 118, 0.05); }
 }
 
 .status {

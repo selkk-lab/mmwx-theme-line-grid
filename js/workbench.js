@@ -59,7 +59,7 @@
     document.body.classList.toggle('has-compare',!!list.length);
     document.querySelectorAll('[data-quick-compare]').forEach(button=>{
       const s=(options.servers||[])[Number(button.dataset.quickCompare)];if(!s)return;
-      const on=chosen.includes(key(s));button.setAttribute('aria-pressed',String(on));button.textContent=on?'✓':'＋';button.disabled=!on&&list.length>=3;
+      const on=chosen.includes(key(s)),mark=on?'✓':'＋';button.setAttribute('aria-pressed',String(on));if(button.textContent!==mark)button.textContent=mark;button.disabled=!on&&list.length>=3;
       button.title=on?'移出对比':button.disabled?'最多对比 3 台':'加入对比';button.setAttribute('aria-label',s.name+'：'+button.title);
     });
   }

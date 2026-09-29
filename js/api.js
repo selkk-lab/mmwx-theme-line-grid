@@ -106,78 +106,129 @@
     ]);
   }
 
-  function connectKomari(onPayload) {
+  function fetchSystem(index, range) {
+    const q = new URLSearchParams();
+    q.set("server", String(index));
+    q.set("range", range || "1h");
+    q.set("metric", "system");
+    return firstJSON(["/api/series?" + q, "/api/public/probe-series?" + q]);
+  }
+
+  let current = null;
+
+  function streamLive() {
+    return !!(current && current.socket && current.socket.readyState === 1);
+  }
+
+  function wsRoot() {
     const root = base();
-    if (!root && location.protocol === "file:") return null;
-    const http = root || (location.protocol + "//" + location.host);
-    const wsRoot = http.replace(/^http/i, "ws");
-    let timer = null;
-    let ws = null;
-    function ask() {
-      if (ws && ws.readyState === 1) {
-        try { ws.send("get"); } catch (err) {}
-      }
+    if (!root && location.protocol === "file:") return "";
+    return (root || (location.protocol + "//" + location.host)).replace(/^http/i, "ws");
+  }
+
+  // Keeps one socket alive: alternate URLs are tried only until one has opened, dropped sockets
+  // reconnect with capped backoff, a silent socket is recycled, and a page hidden for a minute disconnects.
+  function stream(urls, handlers) {
+    const QUIET_MS = 30000, IDLE_MS = 60000;
+    let index = 0, confirmed = false, retry = 0, ws = null, timer = 0, watchdog = 0, idle = 0;
+    function live() { return ws && ws.readyState <= 1; }
+    function drop(socket, reconnect) {
+      if (ws !== socket) return;
+      ws = null;
+      clearTimeout(watchdog);
+      try { socket.close(); } catch (err) {}
+      if (handlers.close) handlers.close();
+      if (reconnect) failed(true);
     }
-    try {
-      ws = new WebSocket(wsRoot + "/api/clients");
-    } catch (err) {
-      return null;
+    function arm(socket) {
+      clearTimeout(watchdog);
+      watchdog = setTimeout(function () { drop(socket, true); }, QUIET_MS);
     }
-    ws.onopen = function () {
-      ask();
-      timer = setInterval(ask, 2000);
-    };
-    ws.onmessage = function (ev) {
-      let msg = ev.data;
-      if (msg === "get") return;
-      try {
-        if (typeof msg === "string") msg = JSON.parse(msg);
-      } catch (err) { return; }
-      if (!msg || typeof msg !== "object") return;
-      onPayload(KomariAdapt.toPayload(null, msg, null));
-    };
-    ws.onclose = function () {
-      if (timer) clearInterval(timer);
-    };
-    return ws;
+    function schedule() {
+      clearTimeout(timer);
+      if (document.hidden) return;
+      const delay = Math.min(30000, 1000 * Math.pow(2, retry)) * (0.75 + Math.random() * 0.5);
+      retry += 1;
+      timer = setTimeout(open, delay);
+    }
+    function failed(opened) {
+      if (!confirmed && !opened && index < urls.length - 1) { index += 1; open(); return; }
+      if (!confirmed) index = 0;
+      schedule();
+    }
+    function open() {
+      clearTimeout(timer);
+      if (live()) return;
+      let socket;
+      let opened = false;
+      try { socket = new WebSocket(urls[index]); } catch (err) { failed(false); return; }
+      ws = socket;
+      socket.onopen = function () {
+        opened = true; confirmed = true; retry = 0;
+        arm(socket);
+        if (handlers.open) handlers.open(socket);
+      };
+      socket.onmessage = function (ev) { if (ws !== socket) return; arm(socket); handlers.message(ev.data, socket); };
+      socket.onclose = function () {
+        if (ws !== socket) return;
+        ws = null;
+        clearTimeout(watchdog);
+        if (handlers.close) handlers.close();
+        failed(opened);
+      };
+    }
+    function resume() {
+      clearTimeout(idle);
+      if (!live()) { retry = 0; open(); }
+    }
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden) { resume(); return; }
+      clearTimeout(idle);
+      idle = setTimeout(function () {
+        clearTimeout(timer);
+        if (document.hidden && ws) drop(ws, false);
+      }, IDLE_MS);
+    });
+    window.addEventListener("online", resume);
+    open();
+    return { get socket() { return ws; } };
+  }
+
+  function connectKomari(onPayload) {
+    const root = wsRoot();
+    if (!root) return null;
+    let timer = 0;
+    return current = stream([root + "/api/clients"], {
+      open: function (ws) {
+        function ask() { if (ws.readyState === 1) { try { ws.send("get"); } catch (err) {} } }
+        ask();
+        clearInterval(timer);
+        timer = setInterval(ask, 2000);
+      },
+      message: function (raw) {
+        if (raw === "get") return;
+        let msg = raw;
+        try { if (typeof msg === "string") msg = JSON.parse(msg); } catch (err) { return; }
+        if (!msg || typeof msg !== "object") return;
+        onPayload(KomariAdapt.toPayload(null, msg, null));
+      },
+      close: function () { clearInterval(timer); },
+    });
   }
 
   function connectWS(onPayload) {
     if (forcedSource() === "komari" || lastSource === "komari") return connectKomari(onPayload);
-    const root = base();
-    if (!root && location.protocol === "file:") return null;
-    const http = root || (location.protocol + "//" + location.host);
-    const wsRoot = http.replace(/^http/i, "ws");
+    const root = wsRoot();
+    if (!root) return null;
     const q = token() ? "?token=" + encodeURIComponent(token()) : "";
-    const paths = ["/api/stream", "/api/public/probe-ws"];
-    let i = 0;
-    let ws = null;
-    function open() {
-      if (i >= paths.length) {
-        connectKomari(onPayload);
-        return;
-      }
-      try {
-        ws = new WebSocket(wsRoot + paths[i] + q);
-      } catch (err) {
-        i += 1;
-        open();
-        return;
-      }
-      ws.onmessage = function (ev) {
+    return current = stream([root + "/api/stream" + q, root + "/api/public/probe-ws" + q], {
+      message: function (raw) {
         try {
-          const data = JSON.parse(ev.data);
+          const data = JSON.parse(raw);
           if (data && typeof data === "object") onPayload(data);
         } catch (err) {}
-      };
-      ws.onerror = function () {
-        try { ws.close(); } catch (err) {}
-        i += 1;
-        open();
-      };
-    }
-    open();
-    return ws;
+      },
+    });
   }
 
   function sparkFromSeries(payload) {
@@ -193,7 +244,9 @@
     base: base,
     fetchServers: fetchServers,
     fetchSeries: fetchSeries,
+    fetchSystem: fetchSystem,
     connectWS: connectWS,
+    streamLive: streamLive,
     sparkFromSeries: sparkFromSeries,
   };
 })(window);

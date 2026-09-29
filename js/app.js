@@ -37,6 +37,7 @@
   let refreshPending = false;
   let streamStarted = false;
   let composing = false;
+  let renderPending = false;
 
   function needsAttention(s) {
     return !s.online || (s.cpu_pct != null && s.cpu_pct >= 85)
@@ -49,10 +50,94 @@
     if (!el) return;
     const stale = lastUpdated && Date.now() - lastUpdated.getTime() > 45000;
     const text = forcedDemo() ? "本地演示 · 非真实数据" : loadState === "loading" ? "正在连接" : loadState === "error" ? "连接失败" : state.enabled === false ? "探针未开启" : stale ? "数据待更新" : "数据已同步";
-    el.textContent = text;
+    if (el.textContent !== text) el.textContent = text;
     el.dataset.tone = forcedDemo() ? "demo" : (stale || loadState === "error") ? "warn" : "ok";
     const btn = document.getElementById("refresh-data");
-    if (btn) { btn.disabled = refreshPending; btn.textContent = refreshPending ? "刷新中…" : "↻ 刷新"; }
+    const label = refreshPending ? "刷新中…" : "↻ 刷新";
+    if (btn) { btn.disabled = refreshPending; if (btn.textContent !== label) btn.textContent = label; }
+  }
+
+  // Snapshots patch the live DOM instead of replacing it, so hover, focus, text selection and
+  // running animations survive the 5-second refresh. The globe canvas subtree is never patched.
+  const scratch = document.createElement("template");
+  function morph(target, html) {
+    scratch.innerHTML = html;
+    patchChildren(target, scratch.content);
+    scratch.innerHTML = "";
+  }
+
+  function isAtlas(node) {
+    return node.nodeType === 1 && node.hasAttribute("data-canvas-ready");
+  }
+
+  function patchChildren(parent, next) {
+    let a = parent.firstChild;
+    let b = next.firstChild;
+    while (b) {
+      const following = b.nextSibling;
+      if (!a) parent.appendChild(b);
+      else if (a.nodeType === b.nodeType && a.nodeName === b.nodeName && isAtlas(a) === isAtlas(b)) {
+        patchNode(a, b);
+        a = a.nextSibling;
+      } else {
+        const stale = a;
+        a = a.nextSibling;
+        parent.replaceChild(b, stale);
+      }
+      b = following;
+    }
+    while (a) {
+      const stale = a;
+      a = a.nextSibling;
+      parent.removeChild(stale);
+    }
+  }
+
+  // Readings whose text changed because of a pushed snapshot flash briefly (the "数字进场" effect).
+  const TICK = ".val, .ni-latency b, .ni-speeds b, .micro-meter b, .console-stat > strong, .channel-node > b, .target-readout strong, .matrix-cell b, .region-reading, .hotspot-list b, .quota-read b, .trend-card strong";
+  let ticking = false;
+  const ticked = [];
+
+  function flashTicks() {
+    const list = ticked.splice(0);
+    if (!list.length || !window.ProbeFX || !ProbeFX.on("count") || matchMedia("(prefers-reduced-motion: reduce)").matches || document.hidden) return;
+    const gold = cssVar("--gold", "#c4a56a");
+    const seen = new Set();
+    list.forEach(function (el) {
+      const target = el.closest && el.closest(TICK);
+      if (!target || seen.has(target) || !target.isConnected) return;
+      seen.add(target);
+      target.animate([{ color: gold, textShadow: "0 0 12px " + hexToRgba(gold, 0.35) }], { duration: 1100, easing: "cubic-bezier(.2,.7,.2,1)" });
+    });
+  }
+
+  function patchNode(a, b) {
+    if (a.nodeType !== 1) {
+      if (a.nodeValue !== b.nodeValue) {
+        a.nodeValue = b.nodeValue;
+        if (ticking && a.parentNode) ticked.push(a.parentNode);
+      }
+      return;
+    }
+    if (isAtlas(a) || a.isEqualNode(b)) return;
+    const hovering = a.classList.contains("fx-hovering");
+    const hoverStyle = hovering ? a.getAttribute("style") : null;
+    const chosen = a.tagName === "SELECT" ? b.querySelector("option[selected]") : null;
+    for (let i = a.attributes.length - 1; i >= 0; i -= 1) {
+      const name = a.attributes[i].name;
+      if (!b.hasAttribute(name)) a.removeAttribute(name);
+    }
+    for (let i = 0; i < b.attributes.length; i += 1) {
+      const attr = b.attributes[i];
+      if (a.getAttribute(attr.name) !== attr.value) a.setAttribute(attr.name, attr.value);
+    }
+    if (hovering) {
+      a.classList.add("fx-hovering");
+      if (hoverStyle != null) a.setAttribute("style", hoverStyle);
+    }
+    patchChildren(a, b);
+    if (a.tagName === "INPUT" && a !== document.activeElement) a.value = b.getAttribute("value") || "";
+    if (chosen) a.value = chosen.value;
   }
 
   function refreshData() {
@@ -79,9 +164,16 @@
   let netIndex = 0;
   let netTarget = "all";
   let pulseDay = new Date().getDate();
+  let pulsePicked = false;
+  let shownHome = null;
   let pulse = ProbeDemo.monthPulse();
   let liveMode = false;
   let seriesCache = {};
+  let flow = [];
+  let sysRange = "1h";
+  const sysCache = {};
+  const sysPending = {};
+  let lastFocusEl = null;
 
   function cssVar(name, fallback) {
     const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -543,64 +635,120 @@
     const today = new Date().getDate();
     const days = pulse.length || 31;
     const heights = pulse.map(function (p) { return p.total; });
-    const usedToNow = pulse.filter(function (p) { return p.day <= today; }).reduce(function (a, b) { return a + b.total; }, 0);
-    const half = pulse.find(function (p) { return p.acc >= usedToNow * 0.5 && p.day <= today; });
+    const past = pulse.filter(function (p) { return p.day <= today; });
+    const usedToNow = past.reduce(function (a, b) { return a + b.total; }, 0);
+    const active = past.filter(function (p) { return p.total > 0; });
+    const busiest = active.slice().sort(function (a, b) { return b.total - a.total; })[0];
+    const half = usedToNow ? pulse.find(function (p) { return p.acc >= usedToNow * 0.5 && p.day <= today; }) : null;
     const info = pulseInfo(pulseDay);
     const hits = pulse.map(function (p) {
-      return '<button type="button" data-day="' + p.day + '" aria-label="' + p.date + '"></button>';
+      return '<button type="button" data-day="' + p.day + '" aria-label="' + p.date + " · " + fmtBytes(p.total, 1) + '" aria-pressed="' + (p.day === pulseDay) + '"></button>';
     }).join("");
+    const marks = pulse.map(function (p) {
+      const major = p.day === 1 || p.day % 5 === 0 || p.day === days;
+      return "<span" + (p.day === today ? ' class="is-today"' : "") + ">" + (major || p.day === today ? pad(p.day) : "") + "</span>";
+    }).join("");
+    const cell = function (label, value) { return "<div><dt>" + label + "</dt><dd>" + value + "</dd></div>"; };
     return (
-      '<section class="cycle" aria-label="本月脉搏">' +
-        '<div class="cycle-head">' +
-          "<span>本月脉搏　<b>" + info.date.slice(5) + "</b>　全网 " + fmtBytes(info.total, 1) +
-          (info.total ? "　最忙 " + info.peak : "") +
-          (info.offline ? "　·　曾掉线" : "") +
-          (info.loss >= 1 ? "　·　丢包 " + info.loss + "%" : "") +
-          "</span>" +
-          "<span>已过 " + today + "/" + days + "　累计 " + fmtBytes(usedToNow, 1) + "　空心点 = 过半</span>" +
-        "</div>" +
-        '<div class="ruler">' +
-          ProbeCharts.ruler(today, days, { heights: heights, selected: pulseDay, halfDay: half ? half.day : 0 }) +
-          '<div class="ruler-hit">' + hits + "</div>" +
+      '<section class="cycle instrument-panel" aria-label="本月脉搏">' +
+        '<header class="console-heading"><h2><span>03</span>本月脉搏 <em>全网每日流量</em></h2><span class="cycle-legend"><i class="lg-bar"></i>当日<i class="lg-line"></i>月内累计<i class="lg-half"></i>过半</span></header>' +
+        '<div class="cycle-body">' +
+          '<div class="cycle-read">' +
+            '<span class="instrument-label">SELECTED DAY</span><strong>' + info.date.slice(5) + "</strong>" +
+            "<dl>" + cell("全网", fmtBytes(info.total, 1)) + cell("最忙节点", info.total ? escAttr(info.peak) : "—") + cell("占本月", info.total && usedToNow ? Math.round(info.total / usedToNow * 100) + "%" : "—") + "</dl>" +
+            (info.offline ? '<p class="tone-danger">当日曾掉线</p>' : "") +
+            (info.loss >= 1 ? '<p class="tone-warn">当日丢包 ' + info.loss + "%</p>" : "") +
+          "</div>" +
+          '<div class="cycle-chart">' +
+            '<div class="ruler">' + ProbeCharts.ruler(today, days, { heights: heights, selected: pulseDay, halfDay: half ? half.day : 0 }) + '<div class="ruler-hit">' + hits + "</div></div>" +
+            '<div class="cycle-days" aria-hidden="true" style="--days:' + days + '">' + marks + "</div>" +
+            '<div class="cycle-foot"><span>已过 <b>' + Math.min(today, days) + " / " + days + "</b> 天</span><span>本月累计 <b>" + fmtBytes(usedToNow, 1) + "</b></span><span>有记录日均 <b>" + fmtBytes(active.length ? usedToNow / active.length : 0, 1) + "</b></span>" + (busiest ? "<span>峰值 <b>" + busiest.date.slice(5) + " · " + fmtBytes(busiest.total, 1) + "</b></span>" : "") + "</div>" +
+          "</div>" +
         "</div>" +
       "</section>"
     );
+  }
+
+  function fleetFlow() {
+    const servers = state.servers || [];
+    const sum = function (k) { return servers.reduce(function (a, s) { return a + (s.online && s[k] > 0 ? s[k] : 0); }, 0); };
+    flow.push({ down: sum("download_speed"), up: sum("upload_speed") });
+    if (flow.length > 120) flow.shift();
+  }
+
+  function flowLine() {
+    if (flow.length < 2) return "";
+    const top = Math.max(1, ...flow.map(function (f) { return f.down; }));
+    const step = 160 / (flow.length - 1);
+    const d = flow.map(function (f, i) { return (i ? "L" : "M") + (i * step).toFixed(1) + " " + (20 - f.down / top * 18).toFixed(1); }).join(" ");
+    return '<svg class="fleet-flow" viewBox="0 0 160 22" preserveAspectRatio="none" role="img" aria-label="本页打开后的全网下行合计走势"><path d="' + d + '"/></svg>';
+  }
+
+  function meter(ratio, tone) {
+    return '<i class="fleet-meter' + (tone ? " " + tone : "") + '"><i style="width:' + Math.max(0, Math.min(100, ratio * 100)).toFixed(1) + '%"></i></i>';
   }
 
   function fleetStrip() {
     const t = totals();
+    const servers = state.servers || [];
     const regions = {};
-    (state.servers || []).forEach(function (s) {
+    servers.forEach(function (s) {
       const k = s.region_country || "—";
       regions[k] = (regions[k] || 0) + 1;
     });
-    const down = (state.servers || []).reduce(function (a, s) { return a + (s.download_speed || 0); }, 0);
-    const up = (state.servers || []).reduce(function (a, s) { return a + (s.upload_speed || 0); }, 0);
+    const down = servers.reduce(function (a, s) { return a + (s.download_speed || 0); }, 0);
+    const up = servers.reduce(function (a, s) { return a + (s.upload_speed || 0); }, 0);
+    const limited = servers.filter(function (s) { return s.traffic_limit > 0; });
+    const lUsed = limited.reduce(function (a, s) { return a + (s.traffic_used || 0); }, 0);
+    const lLimit = limited.reduce(function (a, s) { return a + s.traffic_limit; }, 0);
+    const ratio = lLimit ? lUsed / lLimit : 0;
     const cost = monthCost();
     return (
       '<section class="fleet" aria-label="集群概览">' +
-        "<article><div class='lbl'>节点</div><div class='val'>" + t.all + "</div><div class='sub'>在线 " + t.online + " · 离线 " + (t.all - t.online) + "</div></article>" +
+        "<article title='在线：最近一次快照中上报了心跳的节点'><div class='lbl'>节点</div><div class='val'>" + t.all + "</div><div class='sub'>在线 " + t.online + " · 离线 " + (t.all - t.online) + "</div>" + meter(t.all ? t.online / t.all : 0, t.online < t.all ? "warn" : "") + "</article>" +
         "<article><div class='lbl'>地区</div><div class='val'>" + Object.keys(regions).length + "</div><div class='sub'>独立地域</div></article>" +
-        "<article><div class='lbl'>下行合计</div><div class='val'>" + fmtSpeed(down) + "</div><div class='sub'>上行 " + fmtSpeed(up) + "</div></article>" +
-        "<article><div class='lbl'>周期流量</div><div class='val'>" + fmtBytes(t.used, 1) + "</div><div class='sub'>限额 " + fmtBytes(t.limit, 2) + "</div></article>" +
-        "<article><div class='lbl'>月均成本</div><div class='val'>¥" + cost.toFixed(0) + "</div><div class='sub'>按续费折算</div></article>" +
+        "<article title='所有节点当前下行速度之和；走势线从打开本页开始记录'><div class='lbl'>下行合计</div><div class='val'>" + fmtSpeed(down) + "</div><div class='sub'>上行 " + fmtSpeed(up) + "</div>" + flowLine() + "</article>" +
+        "<article title='进度条只统计设置了流量限额的节点'><div class='lbl'>周期流量</div><div class='val'>" + fmtBytes(t.used, 1) + "</div><div class='sub'>限额 " + fmtBytes(t.limit, 2) + (lLimit ? " · 已用 " + Math.round(ratio * 100) + "%" : "") + "</div>" + (lLimit ? meter(ratio, ratio >= 0.9 ? "danger" : ratio >= 0.7 ? "warn" : "") : "") + "</article>" +
+        "<article title='年付、季付等按月折算后的合计'><div class='lbl'>月均成本</div><div class='val'>" + ProbeInsight.money(cost) + "</div><div class='sub'>年化 " + ProbeInsight.money(cost * 12) + " · 按续费折算</div></article>" +
       "</section>"
     );
   }
 
-  function empty(title, text) {
-    main.innerHTML =
-      '<section class="state">' +
+  function digestBlock() {
+    const servers = state.servers || [];
+    const items = ProbeInsight.attention(servers);
+    const online = servers.filter(function (s) { return s.online; }).length;
+    if (!items.length) {
+      return '<section class="digest is-clear" aria-label="需要留意"><span class="digest-lamp" aria-hidden="true"></span><strong>一切正常</strong><span>' + online + " 台在线，没有离线、超额、丢包或临近续费的节点。</span></section>";
+    }
+    return '<section class="digest" aria-label="需要留意"><header><span class="instrument-label">ATTENTION</span><strong>需要留意</strong><b>' + items.length + "</b><small>点击直接查看节点</small></header>" +
+      '<div class="digest-items">' + items.map(function (x) {
+        return '<button type="button" class="digest-item tone-' + x.tone + '" data-index="' + x.i + '"><span class="digest-kind">' + x.kind + "</span><strong>" + escAttr(x.s.name || "未命名") + "</strong><small>" + escAttr(x.text) + "</small></button>";
+      }).join("") + "</div></section>";
+  }
+
+  function empty(title, text, opts) {
+    const o = opts || {};
+    morph(main,
+      '<section class="state"' + (o.status ? ' role="status" aria-busy="' + (o.busy ? "true" : "false") + '"' : "") + ">" +
         ProbeCharts.wave({ w: 280, h: 64 }) +
         "<h2>" + title + "</h2>" +
         "<p>" + text + "</p>" +
-      "</section>";
+        (o.retry ? '<button class="action-btn" type="button" data-retry>重新连接</button>' : "") +
+      "</section>");
   }
 
   function renderChrome(r) {
     const titles = { nodes: state.title || "节点状态", network: "网络状况", resource: "资源概况" };
     titleEl.textContent = titles[r.home] || titles.nodes;
     titleEl.hidden = false;
+    titleEl.dataset.desk = { nodes: "00", network: "01", resource: "02" }[r.home] || "00";
+    const summaryEl = document.getElementById("page-summary");
+    if (summaryEl) {
+      const html = (liveMode || forcedDemo()) && state.enabled !== false ? ProbeInsight.summary(r.home, state.servers) : "";
+      morph(summaryEl, html);
+      summaryEl.hidden = !html;
+    }
     Array.prototype.forEach.call(document.querySelectorAll("#site-nav [data-home]"), function (btn) {
       btn.classList.toggle("is-on", btn.getAttribute("data-home") === r.home);
     });
@@ -689,10 +837,10 @@
     paintConnection();
     if (!lastUpdated || state.enabled === false) { foot.innerHTML = ""; return; }
     const t = totals();
-    foot.innerHTML =
+    morph(foot,
       "<div>总使用流量　<b>" + fmtBytes(t.used, 2) + " / " + fmtBytes(t.limit, 2) + "</b></div>" +
       "<div>在线服务器　<b>" + t.online + " / " + t.all + "</b></div>" +
-      "<div>最后更新　<b>" + clock(lastUpdated) + "</b>　·　" + (liveMode ? (state._source === "komari" ? "Komari 接口" : "官方接口") : "演示数据") + "</div>";
+      "<div>最后更新　<b>" + clock(lastUpdated) + "</b>　" + ProbeInsight.ago(lastUpdated) + "　·　" + (liveMode ? (state._source === "komari" ? "Komari 接口" : "官方接口") + (ProbeAPI.streamLive() ? " · 实时推送" : " · 定时刷新") : "演示数据") + "</div>");
   }
 
   function listEmpty() {
@@ -702,27 +850,27 @@
   function renderGrid(r) {
     refreshMarks();
     const items = listedServers();
-    main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + (items.length
+    morph(main, fleetStrip() + digestBlock() + globePanel() + listToolbar(r) + (items.length
       ? '<section class="board" aria-label="网格排列">' + items.map(function (item) {
         return card(item.s, item.i);
       }).join("") + "</section>"
-      : listEmpty()) + cycleBlock();
+      : listEmpty()) + cycleBlock());
   }
 
   function renderColumn(r) {
     refreshMarks();
     const items = listedServers();
-    main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + '<section class="stack" aria-label="列排列">' + items.map(function (item) {
+    morph(main, fleetStrip() + digestBlock() + globePanel() + listToolbar(r) + '<section class="stack" aria-label="列排列">' + items.map(function (item) {
       return slab(item.s, item.i);
-    }).join("") + "</section>" + (items.length ? "" : listEmpty()) + cycleBlock();
+    }).join("") + "</section>" + (items.length ? "" : listEmpty()) + cycleBlock());
   }
 
   function renderList(r) {
     refreshMarks();
     const items = listedServers();
-    main.innerHTML = fleetStrip() + globePanel() + listToolbar(r) + '<section class="list" aria-label="横向排列">' + listHead() + items.map(function (item) {
+    morph(main, fleetStrip() + digestBlock() + globePanel() + listToolbar(r) + '<section class="list" aria-label="横向排列">' + listHead() + items.map(function (item) {
       return row(item.s, item.i);
-    }).join("") + "</section>" + (items.length ? "" : listEmpty()) + cycleBlock();
+    }).join("") + "</section>" + (items.length ? "" : listEmpty()) + cycleBlock());
   }
 
   function nodeCtx(index) {
@@ -740,18 +888,43 @@
       const hist = ProbeDemo.pingSeries(s, range, ping.key);
       sparkVals = (hist.series || []).map(function (p) { return p.value; });
     }
-    return { s: s, ping: ping, sparkVals: sparkVals, st: dailyStats(s), last7: ProbeAdapt.lastDays(s.daily_traffic, 7) };
+    return { s: s, ping: ping, sparkVals: sparkVals, st: dailyStats(s), last7: ProbeAdapt.lastDays(s.daily_traffic, 7), sys: systemState(index) };
+  }
+
+  function systemState(index) {
+    const s = state.servers[index];
+    if (!liveMode) return { range: sysRange, status: "ready", series: s ? ProbeDemo.systemSeries(s, sysRange).series : null };
+    const cached = sysCache[index + ":" + sysRange];
+    return { range: sysRange, status: cached ? "ready" : "loading", series: cached ? cached.series : null };
+  }
+
+  function ensureSystem(index) {
+    const key = index + ":" + sysRange;
+    const cached = sysCache[key];
+    if (!liveMode || sysPending[key] || (cached && Date.now() - cached.at < 60000)) return;
+    sysPending[key] = true;
+    ProbeAPI.fetchSystem(index, sysRange).then(function (payload) {
+      const series = payload && payload.series;
+      sysCache[key] = { at: Date.now(), series: series && typeof series === "object" && !Array.isArray(series) && (series.cpu_pct || series.mem_used) ? series : null };
+    }, function () {
+      sysCache[key] = { at: Date.now(), series: null };
+    }).then(function () {
+      delete sysPending[key];
+      if (route().node === index && ProbeConsole.tab === "system") renderWindow(index);
+    });
   }
 
   function pageHTML(index) { const ctx = nodeCtx(index); return ctx ? ProbeConsole.detail(ctx) : ""; }
 
+  function returnTarget() {
+    return (lastFocusEl && lastFocusEl.isConnected && lastFocusEl) || (lastFocus && document.querySelector(lastFocus));
+  }
+
   function closeWindow() {
     const r = route();
     go(viewHash(r.view || lastView));
-    if (lastFocus) {
-      const el = document.querySelector(lastFocus);
-      if (el) el.focus();
-    }
+    const el = returnTarget();
+    if (el) el.focus();
   }
 
   function renderWindow(index, page) {
@@ -767,13 +940,14 @@
     if (window.ProbeWorkbench) ProbeWorkbench.detail(index);
     winTitle.textContent = s.name || "未命名";
     winKicker.textContent = ccText(s) + " / " + (ProbeAdapt.roleLabel(roleOf(s)) || "DETAIL");
-    winBody.innerHTML = pageHTML(index);
+    morph(winBody, pageHTML(index));
     overlay.hidden = false;
     document.body.classList.add("is-locked");
     document.documentElement.classList.add("is-locked");
     winBody.scrollTop = opening ? 0 : scroll;
     document.querySelector(".shell").inert = true;
     if (opening) document.getElementById("win-close").focus({ preventScroll: true });
+    if (ProbeConsole.tab === "system") ensureSystem(index);
   }
 
   function globePanel() {
@@ -805,12 +979,12 @@
     document.body.classList.remove("is-locked");
     document.documentElement.classList.remove("is-locked");
     winBody.innerHTML = "";
-    if (wasOpen) { const el = (lastFocus && document.querySelector(lastFocus)) || document.querySelector(".command-trigger"); if (el) el.focus({ preventScroll: true }); }
+    if (wasOpen) { const el = returnTarget() || document.querySelector(".command-trigger"); if (el) el.focus({ preventScroll: true }); }
   }
 
   function renderNetwork() {
     const servers = state.servers || [];
-    if (!servers.length) { main.innerHTML = listEmpty(); return; }
+    if (!servers.length) { morph(main, listEmpty()); return; }
     if (!servers[netIndex]) netIndex = 0;
     const s = servers[netIndex], targets = s.ping || [];
     if (netTarget !== "all" && !targets.some(p => p.key === netTarget)) netTarget = "all";
@@ -825,12 +999,13 @@
         return available.length ? Math.round(available.reduce((a,b)=>a+b,0)/available.length*10)/10 : -1;
       });
     }
-    main.innerHTML = ProbeConsole.network({servers, index:netIndex, target:netTarget, range, values:vals});
+    const chains = liveMode && state.show_forward === false ? [] : ProbeInsight.chains(state);
+    morph(main, ProbeConsole.network({servers, index:netIndex, target:netTarget, range, values:vals, chains}));
   }
 
   function renderResource() {
     const servers = state.servers || [];
-    main.innerHTML = ProbeConsole.resource({servers, last7:ProbeAdapt.lastDaysAcross(servers,7), cost:monthCost(), settings:liveMode?state:{}});
+    morph(main, ProbeConsole.resource({servers, last7:ProbeAdapt.lastDaysAcross(servers,7), cost:monthCost(), settings:liveMode?state:{}}));
   }
 
   function renderBoard(r) {
@@ -844,24 +1019,28 @@
   function render() {
     const persistentAtlas = main.querySelector(".atlas[data-canvas-ready]");
     const active = document.activeElement;
-    const attrs = ["data-find", "data-order", "data-status", "data-sort", "data-view", "data-globe", "data-net", "data-nett", "data-range", "data-target", "data-index", "data-day", "data-resource-metric", "data-resource-order", "data-detail-tab", "data-matrix-node", "data-quick-compare", "data-scope-zoom", "data-scope-view"];
+    const attrs = ["data-find", "data-order", "data-status", "data-sort", "data-view", "data-globe", "data-net", "data-nett", "data-range", "data-target", "data-index", "data-day", "data-resource-metric", "data-resource-order", "data-detail-tab", "data-matrix-node", "data-quick-compare", "data-scope-zoom", "data-scope-view", "data-sys-range"];
     const attr = active && attrs.find(k => active.hasAttribute(k));
     const value = attr ? active.getAttribute(attr) : null;
     const pos = active && active.selectionStart;
+    const sample = attr === "data-scope-view" ? active.dataset.sample : undefined;
     renderContent();
     const newAtlas = main.querySelector(".atlas");
     if (newAtlas && window.ProbeGlobe) {
-      if (persistentAtlas) newAtlas.replaceWith(persistentAtlas);
+      if (persistentAtlas && newAtlas !== persistentAtlas) newAtlas.replaceWith(persistentAtlas);
       ProbeGlobe.update(persistentAtlas || newAtlas, state.servers, { onSelect: openNode });
-      if (persistentAtlas && persistentAtlas.contains(active) && overlay.hidden) active.focus({ preventScroll: true });
+      if (persistentAtlas && persistentAtlas.contains(active) && overlay.hidden && document.activeElement !== active) active.focus({ preventScroll: true });
     }
     if (window.ProbeWorkbench) ProbeWorkbench.sync({ servers: state.servers, openNode: openNode, fmtBytes: fmtBytes, fmtSpeed: fmtSpeed, pct: pct, primaryPing: primaryPing });
     if (attr && !active.isConnected) {
       const scope = overlay.hidden ? main : overlay;
       const next = Array.from(scope.querySelectorAll("[" + attr + "]")).find(el => el.tagName === active.tagName && el.getAttribute(attr) === value);
-      if (next) { next.focus({ preventScroll: true }); if (attr === "data-scope-view") ProbeConsole.inspectSample(next, Number(active.dataset.sample || 0)); try { next.setSelectionRange(pos, pos); } catch (_) {} }
+      if (next) { next.focus({ preventScroll: true }); if (attr === "data-scope-view") ProbeConsole.inspectSample(next, Number(sample || 0)); try { next.setSelectionRange(pos, pos); } catch (_) {} }
+    } else if (sample != null) {
+      ProbeConsole.inspectSample(active, Number(sample));
     }
     paintConnection();
+    shownHome = route().home;
     if (window.ProbeFX) ProbeFX.enter(main, route().home + ":" + route().view);
     ProbeConsole.enhance(overlay.hidden ? main : overlay, location.hash + ":" + netIndex + ":" + netTarget + ":" + range + ":" + ProbeConsole.metric + ":" + (overlay.querySelector("[data-detail-content]")?.dataset.detailContent || ""));
   }
@@ -873,10 +1052,8 @@
     renderChrome(r);
 
     if (!liveMode && !forcedDemo()) {
-      empty(loadState === "error" ? "暂时无法连接探针" : "正在获取节点状态", loadState === "error" ? "请检查网络连接，或稍后重试。" : "数据就绪后自动展示，请稍候。");
-      if (loadState === "error") main.querySelector(".state").insertAdjacentHTML("beforeend", '<button class="action-btn" type="button" data-retry>重新连接</button>');
-      main.querySelector(".state").setAttribute("role", "status");
-      main.querySelector(".state").setAttribute("aria-busy", loadState === "loading" ? "true" : "false");
+      const failed = loadState === "error";
+      empty(failed ? "暂时无法连接探针" : "正在获取节点状态", failed ? "请检查网络连接，或稍后重试。" : "数据就绪后自动展示，请稍候。", { status: true, busy: loadState === "loading", retry: failed });
       foot.innerHTML = "";
       hideWindow();
       return;
@@ -905,6 +1082,7 @@
   function openNode(index, page) {
     ProbeConsole.resetDetail();
     lastFocus = 'button[data-index="' + index + '"]';
+    lastFocusEl = null;
     targetKey = "";
     range = "1h";
     go(viewHash(route().view || lastView, index, page || "overview"));
@@ -929,6 +1107,7 @@
     const dayBtn = ev.target.closest("[data-day]");
     if (dayBtn) {
       pulseDay = Number(dayBtn.getAttribute("data-day"));
+      pulsePicked = true;
       render();
       return;
     }
@@ -982,6 +1161,7 @@
     const item = ev.target.closest("[data-index]");
     if (!item) return;
     openNode(Number(item.getAttribute("data-index")));
+    lastFocusEl = item;
   }
 
   function onWindowClick(ev) {
@@ -989,6 +1169,12 @@
     if (pageBtn) {
       const r = route();
       go(viewHash(r.view || lastView, r.node, pageBtn.getAttribute("data-page")));
+      return;
+    }
+    const sysBtn = ev.target.closest("[data-sys-range]");
+    if (sysBtn) {
+      sysRange = sysBtn.getAttribute("data-sys-range");
+      renderWindow(route().node);
       return;
     }
     const rangeBtn = ev.target.closest("[data-range]");
@@ -1061,7 +1247,11 @@
       try { el.setSelectionRange(pos, pos); } catch (e) {}
     }
   });
-  window.addEventListener("hashchange", render);
+  window.addEventListener("hashchange", function () {
+    const before = shownHome;
+    render();
+    if (before && before !== shownHome) window.scrollTo(0, 0);
+  });
   window.addEventListener("keydown", onKey);
   function rebuildPulse() {
     const servers = state.servers || [];
@@ -1078,7 +1268,10 @@
       });
     });
     const first = servers[0];
-    const start = first && first.period_start ? new Date(first.period_start + "T00:00:00") : new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+    const now = new Date();
+    const month = now.getFullYear() + "-" + pad(now.getMonth() + 1) + "-";
+    const hasMonth = Object.keys(byDate).some(function (k) { return k.indexOf(month) === 0; });
+    const start = hasMonth || !(first && first.period_start) ? new Date(now.getFullYear(), now.getMonth(), 1) : new Date(first.period_start + "T00:00:00");
     const daysInMonth = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
     const rows = [];
     let acc = 0;
@@ -1097,6 +1290,11 @@
       });
     }
     pulse = rows.length ? rows : ProbeDemo.monthPulse(servers);
+    if (!pulsePicked) {
+      const today = new Date().getDate();
+      const latest = pulse.filter(function (p) { return p.day <= today && p.total > 0; }).pop();
+      pulseDay = latest ? latest.day : today;
+    }
   }
 
   function applyLive(payload) {
@@ -1117,12 +1315,16 @@
     if (state.show_globe === false && localStorage.getItem("mmwx-globe") == null) {
       showGlobe = false;
     }
+    fleetFlow();
     rebuildPulse();
     if ((window.ProbeGlobe && ProbeGlobe.dragging) || composing) return;
+    if (document.hidden) { renderPending = true; return; }
     const y = window.scrollY;
-    const r = route();
+    ticking = true;
     render();
+    ticking = false;
     window.scrollTo(0, y);
+    flashTicks();
   }
 
   function loadSeries(index, tgt) {
@@ -1136,7 +1338,7 @@
   }
 
   function tickDemo() {
-    if (!forcedDemo() || liveMode || (window.ProbeGlobe && ProbeGlobe.dragging) || composing) return;
+    if (!forcedDemo() || liveMode || document.hidden || (window.ProbeGlobe && ProbeGlobe.dragging) || composing) return;
     lastUpdated = new Date();
     (state.servers || []).forEach(function (s, i) {
       const src = ProbeDemo.payload.servers[i];
@@ -1145,9 +1347,13 @@
       s.download_speed = Math.round(src.download_speed * (0.92 + j * 0.12));
       s.upload_speed = Math.round(src.upload_speed * (0.9 + j * 0.14));
     });
+    fleetFlow();
     const y = window.scrollY;
+    ticking = true;
     render();
+    ticking = false;
     window.scrollTo(0, y);
+    flashTicks();
   }
 
   (function bindChartTip() {
@@ -1205,10 +1411,21 @@
   })();
 
   setInterval(tickDemo, 5000);
-  setInterval(renderFoot, 1000);
+  setInterval(function () { if (!document.hidden) renderFoot(); }, 1000);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) return;
+    if (renderPending) {
+      renderPending = false;
+      const y = window.scrollY;
+      render();
+      window.scrollTo(0, y);
+    }
+    if (!forcedDemo() && (!lastUpdated || Date.now() - lastUpdated.getTime() > 25000)) refreshData();
+  });
 
   ProbeConsole.configure({fmtBytes, fmtSpeed, fmtDays, trafficTips, cycles:CYCLE, carriers:CARRIER, range:()=>range, render, openNode});
   document.getElementById("refresh-data").addEventListener("click", refreshData);
+  if (forcedDemo()) fleetFlow();
   render();
   if (forcedDemo()) return;
   refreshData();

@@ -72,7 +72,29 @@
     block_login: false,
     show_name: true,
     show_globe: true,
+    show_forward: true,
+    show_traffic_hotspots: true,
     license_badge: { name: "mmwx", display_name: "妙妙屋X" },
+    forward: {
+      name: "DEMO-HK-JP",
+      end_to_end_ms: 52,
+      loss_pct: 0.1,
+      bucket_sec: 300,
+      trend: [],
+      groups: [
+        { name: "入口组", role: "entry", to_next_ms: 27, servers: [{ name: "HK-01", to_next_ms: 27, healthy: true }] },
+        { name: "出口组", role: "exit", to_next_ms: 0, servers: [{ name: "JP-01", to_next_ms: 0, healthy: true }, { name: "JP-03", to_next_ms: 0, healthy: true }] },
+      ],
+      traffic: {
+        days: ["2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15", "2026-08-16", "2026-08-17"],
+        servers: [
+          { name: "HK-01", group: "入口组", role: "entry", daily_gb: [8.2, 9.1, 7.6, 10.4, 9.8, 11.2, 10.1], total_gb: 66.4 },
+          { name: "JP-01", group: "出口组", role: "exit", daily_gb: [5.1, 5.8, 4.9, 6.6, 6.0, 7.3, 6.4], total_gb: 42.1 },
+          { name: "JP-03", group: "出口组", role: "exit", daily_gb: [3.0, 3.2, 2.6, 3.7, 3.7, 3.8, 3.6], total_gb: 23.6 },
+        ],
+        total_gb: 132.1,
+      },
+    },
     servers: [
       {
         name: "HK-01",

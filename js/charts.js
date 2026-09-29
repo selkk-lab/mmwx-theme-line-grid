@@ -30,7 +30,6 @@
   }
 
   function gold() { return token("--gold", "#c4a56a"); }
-  function voidFill() { return token("--void", "#0c0c0c"); }
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -168,53 +167,58 @@
     const downs = list.map(function (it) { return n(it.downlink || it.total); });
     const ups = list.map(function (it) { return n(it.uplink); });
     const max = Math.max.apply(null, downs.map(function (d, i) { return d + ups[i]; }).concat([1]));
-    const gap = 7;
-    const bw = (w - gap * (downs.length + 1)) / Math.max(downs.length, 1);
-    return '<svg class="bars" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none">' + downs.map(function (d, i) {
+    const slot = w / Math.max(downs.length, 1);
+    const bw = Math.max(2, Math.min(slot * 0.56, 64));
+    const base = h - 1;
+    let grid = "";
+    [0.5, 1].forEach(function (t) {
+      const y = (base - t * (base - 8)).toFixed(2);
+      grid += '<line x1="0" y1="' + y + '" x2="' + w + '" y2="' + y + '" stroke="' + inkRgba(0.07) + '" stroke-width="1" vector-effect="non-scaling-stroke"/>';
+    });
+    return '<svg class="bars" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none">' + grid + downs.map(function (d, i) {
       const up = ups[i];
-      const bhD = Math.max(1, (d / max) * (h - 8));
-      const bhU = Math.max(1, (up / max) * (h - 8));
-      const x = gap + i * (bw + gap);
+      const bhD = Math.max(1, (d / max) * (base - 8));
+      const bhU = up > 0 ? Math.max(1, (up / max) * (base - 8)) : 0;
+      const x = i * slot + (slot - bw) / 2;
       const tip = (opt.tips && opt.tips[i]) || "";
-      return '<rect class="chart-hit" data-tip="' + esc(tip) + '" x="' + x.toFixed(2) + '" y="' + (h - bhD).toFixed(2) + '" width="' + Math.max(2, bw).toFixed(2) + '" height="' + bhD.toFixed(2) + '" fill="' + inkRgba(0.4) + '"/>' +
-        '<rect class="chart-hit" data-tip="' + esc(tip) + '" x="' + x.toFixed(2) + '" y="' + (h - bhD - bhU).toFixed(2) + '" width="' + Math.max(2, bw).toFixed(2) + '" height="' + bhU.toFixed(2) + '" fill="' + gold() + '"/>';
-    }).join("") + "</svg>";
+      return '<rect class="chart-hit" data-tip="' + esc(tip) + '" x="' + x.toFixed(2) + '" y="' + (base - bhD).toFixed(2) + '" width="' + bw.toFixed(2) + '" height="' + bhD.toFixed(2) + '" fill="' + inkRgba(isLight() ? 0.34 : 0.3) + '"/>' +
+        '<rect class="chart-hit" data-tip="' + esc(tip) + '" x="' + x.toFixed(2) + '" y="' + (base - bhD - bhU).toFixed(2) + '" width="' + bw.toFixed(2) + '" height="' + bhU.toFixed(2) + '" fill="' + gold() + '" fill-opacity=".85"/>';
+    }).join("") + '<line x1="0" y1="' + base + '" x2="' + w + '" y2="' + base + '" stroke="' + inkRgba(0.22) + '" stroke-width="1" vector-effect="non-scaling-stroke"/></svg>';
   }
 
+  // Daily bars share the hit-strip's equal columns; the curve is the month-to-date running total.
   function ruler(today, daysInMonth, opt) {
     opt = opt || {};
     const heights = opt.heights || [];
     const selected = opt.selected || today;
     const half = opt.halfDay;
-    const w = 1000;
-    const h = 48;
-    const maxH = Math.max.apply(null, heights.concat([1]));
-    let ticks = "";
-    let labels = "";
-    for (let d = 1; d <= daysInMonth; d += 1) {
-      const x = ((d - 1) / Math.max(1, daysInMonth - 1)) * (w - 8) + 4;
+    const count = Math.max(1, daysInMonth);
+    const w = 1000, h = 100, top = 8, base = 96;
+    const slot = w / count;
+    const maxH = Math.max.apply(null, heights.slice(0, today).concat([1]));
+    const total = heights.slice(0, today).reduce(function (a, b) { return a + (b || 0); }, 0);
+    let grid = "", bars = "", line = "", acc = 0;
+    [0, 0.5, 1].forEach(function (t) {
+      const y = (base - t * (base - top)).toFixed(1);
+      grid += '<line x1="0" y1="' + y + '" x2="' + w + '" y2="' + y + '" stroke="' + inkRgba(t ? 0.07 : 0.18) + '" stroke-width="1" vector-effect="non-scaling-stroke"/>';
+    });
+    for (let d = 1; d <= count; d += 1) {
+      const cx = (d - 0.5) * slot, bw = Math.max(2, slot * 0.56), v = n(heights[d - 1]);
       const future = d > today;
-      const amp = heights[d - 1] != null ? 8 + (heights[d - 1] / maxH) * 18 : 8;
-      const y2 = 26;
-      const y1 = y2 - (future ? 6 : amp);
-      const color = d === selected ? gold() : (future ? inkRgba(0.12) : inkRgba(0.28));
-      ticks += '<line x1="' + x.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x.toFixed(1) + '" y2="' + y2 + '" stroke="' + color + '" stroke-width="' + (d === selected ? 1.6 : 1) + '"/>';
-      const major = d === 1 || d === 5 || d === 10 || d === 15 || d === 20 || d === 30 || d === daysInMonth;
-      if (major) {
-        labels += '<text x="' + x.toFixed(1) + '" y="44" text-anchor="middle" fill="' + inkRgba(0.28) + '" font-size="11" font-family="IBM Plex Mono, monospace">' + String(d).padStart(2, "0") + "</text>";
+      const bh = future ? 2 : Math.max(v ? 3 : 1, v / maxH * (base - top) * 0.9);
+      const fill = d === selected ? gold() : future ? inkRgba(0.07) : inkRgba(isLight() ? 0.3 : 0.26);
+      bars += '<rect x="' + (cx - bw / 2).toFixed(1) + '" y="' + (base - bh).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" fill="' + fill + '"/>';
+      if (!future && total > 0) {
+        acc += v;
+        line += (line ? " L " : "M ") + cx.toFixed(1) + " " + (base - acc / total * (base - top)).toFixed(1);
       }
     }
-    const cx = ((selected - 1) / Math.max(1, daysInMonth - 1)) * (w - 8) + 4;
-    const mark =
-      '<line x1="' + cx.toFixed(1) + '" y1="2" x2="' + cx.toFixed(1) + '" y2="26" stroke="' + gold() + '" stroke-width="1.2"/>' +
-      '<circle cx="' + cx.toFixed(1) + '" cy="30" r="7" fill="' + voidFill() + '" stroke="' + gold() + '"/>' +
-      '<text x="' + cx.toFixed(1) + '" y="33.5" text-anchor="middle" fill="' + token("--ink", "#d5d0c4") + '" font-size="8" font-family="IBM Plex Mono, monospace">' + selected + "</text>";
-    let extra = "";
-    if (half && half !== selected) {
-      const hx = ((half - 1) / Math.max(1, daysInMonth - 1)) * (w - 8) + 4;
-      extra = '<circle cx="' + hx.toFixed(1) + '" cy="30" r="3" fill="none" stroke="' + inkRgba(0.4) + '"/>';
-    }
-    return '<svg class="ruler-svg" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' + ticks + labels + extra + mark + "</svg>";
+    const tx = ((Math.min(today, count) - 0.5) * slot).toFixed(1);
+    const todayMark = '<line x1="' + tx + '" y1="0" x2="' + tx + '" y2="' + base + '" stroke="' + inkRgba(0.28) + '" stroke-width="1" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"/>';
+    const hx = half ? ((half - 0.5) * slot).toFixed(1) : null;
+    const halfMark = hx ? '<line x1="' + hx + '" y1="' + ((base + top) / 2 - 7).toFixed(1) + '" x2="' + hx + '" y2="' + ((base + top) / 2 + 7).toFixed(1) + '" stroke="' + token("--live", "#8fa676") + '" stroke-width="2" vector-effect="non-scaling-stroke"/>' : "";
+    const curve = line ? '<path d="' + line + '" fill="none" stroke="' + token("--live", "#8fa676") + '" stroke-width="1.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' : "";
+    return '<svg class="ruler-svg" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' + grid + bars + todayMark + curve + halfMark + "</svg>";
   }
 
   global.ProbeCharts = { spark: spark, bars: bars, stacked: stacked, wave: wave, ruler: ruler };
